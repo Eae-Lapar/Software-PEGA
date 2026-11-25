@@ -33,11 +33,13 @@
         ++drawVersion;
         pending?.abort();
         get("figurePreview").hidden = true;
+        get("figurePreview").removeAttribute("aria-busy");
         get("figureFiles").hidden = true;
         image.removeAttribute("src");
         if (currentImage) URL.revokeObjectURL(currentImage);
         currentImage = null;
         currentQuery = null;
+        downloads();
         if (get("figureDialog").open) get("figureDialog").close();
         get("figureDialog").querySelector("img").removeAttribute("src");
     }
@@ -47,10 +49,15 @@
     const label = (name, visible) => { get(`figure${name}Label`).hidden = !visible; };
 
     async function draw() {
-        clearPreview();
         if (!data || get("figureControls").hidden) return;
-        const revision = drawVersion;
+        const revision = ++drawVersion;
+        pending?.abort();
+        currentQuery = null;
+        downloads();
+        controls.save.disabled = controls.zoom.disabled = true;
+        get("figurePreview").setAttribute("aria-busy", "true");
         pending = new AbortController();
+        pegaLocale.defaultFigureLanguage("figureLocale");
         const selected = !get("figureSeriesLabel").hidden && series.value ? JSON.parse(series.value) : ["", ""];
         const [nivel, codigo] = get("figureTerritoryLabel").hidden ? ["brasil", ""] : territory.value.split(":");
         const params = new URLSearchParams({tipo: type.value, origem: base.value || "original",
@@ -61,7 +68,9 @@
                 params.set(key, get(`figure${name}`).value);
             }
         }
-        status("figureStatus", "Gerando visualização científica…");
+        status("figureStatus", currentImage
+            ? "Atualizando a visualização. A imagem anterior permanece visível durante a geração."
+            : "Gerando visualização científica…");
         try {
             const response = await fetch(chartUrl("png", params), {cache: "no-store", signal: pending.signal});
             if (!response.ok) {
@@ -70,6 +79,7 @@
             }
             const blob = await response.blob();
             if (revision !== drawVersion) return;
+            if (currentImage) URL.revokeObjectURL(currentImage);
             currentImage = URL.createObjectURL(blob);
             image.src = currentImage;
             image.alt = type.selectedOptions[0].textContent;
@@ -79,21 +89,31 @@
                 ? `Massa acumulada por intervalo · ${data.modelos[base.value].calendario.convencao}` : image.alt;
             get("figurePreview").hidden = false;
             get("figureFiles").hidden = false;
+            controls.save.disabled = controls.zoom.disabled = false;
             downloads();
             status("figureStatus");
         } catch (error) {
-            if (revision === drawVersion) status("figureStatus", error.message, "error");
+            if (revision === drawVersion) status("figureStatus",
+                currentImage ? `${error.message} A imagem exibida é da configuração anterior.` : error.message, "error");
+        } finally {
+            if (revision === drawVersion) get("figurePreview").removeAttribute("aria-busy");
         }
     }
 
-    function downloads() {
+    function downloadUrl(format, dpi) {
         if (!currentQuery) return;
-        for (const format of ["png", "pdf", "svg"]) {
-            const params = new URLSearchParams(currentQuery);
-            params.set("download", "true");
-            params.set("dpi", get("figureDpi").value);
-            get(`figure${format[0].toUpperCase()}${format.slice(1)}`).href = chartUrl(format, params);
-        }
+        const params = new URLSearchParams(currentQuery);
+        params.set("download", "true");
+        params.set("dpi", dpi);
+        return chartUrl(format, params);
+    }
+
+    function downloads() {
+        const links = currentQuery ? ["png", "pdf", "svg"].map(format => ({
+            url: downloadUrl(format, controls.dpi.value),
+            label: `Baixar gráfico filtrado (${format.toUpperCase()}${format === "png" ? `, ${controls.dpi.value} DPI` : ""})`
+        })) : [];
+        document.dispatchEvent(new CustomEvent("pega:figure-exports", {detail: links}));
     }
 
     function filters() {
@@ -127,7 +147,8 @@
         if (!data || get("chartsPanel").hidden) return;
         const group = category.value;
         const available = Object.keys(data.series);
-        const maps = data.espaciais.length ? [["mapa", "Mapas territoriais e interativo"]] : [];
+        const maps = data.espaciais.length
+            ? [["mapa-interativo", "Mapa interativo"], ["mapa-cientifico", "Mapa científico"]] : [];
         const sources = group === "temporal" ? available.filter(o => data.temporais.includes(o) || data.modelos[o]?.calendario)
             : group === "espacial" ? available.filter(o => data.modelos[o]) : available;
         fill(base, sources.map(o => [o, o === "original" ? "Original" : "Especiada"]));
@@ -138,10 +159,14 @@
                 ...(data.temporais.includes(base.value) ? relative : []),
                 ...(data.modelos[base.value]?.calendario ? annual : [])];
         fill(type, types);
+        if (requestedFigure && types.some(([value]) => value === requestedFigure)) type.value = requestedFigure;
+        requestedFigure = null;
 
-        const existing = type.value === "mapa" || type.value === "interativo";
+        const mapSelected = maps.some(([value]) => value === type.value);
+        const existing = mapSelected || type.value === "interativo";
         get("relativeFigures").hidden = type.value !== "interativo";
-        get("spatialFigures").hidden = type.value !== "mapa";
+        get("spatialFigures").hidden = !mapSelected;
+        if (mapSelected) document.dispatchEvent(new CustomEvent("pega:mapa", {detail: type.value}));
         get("figureControls").hidden = !type.value || (existing && types.length <= 1);
         get("figureControls").classList.toggle("figure-selection-only", existing);
         if (existing) label("Base", false);
@@ -154,8 +179,8 @@
     }
 
     async function load() {
+        if (!activeResult || get("chartsPanel").hidden || data) return;
         const current = ++version;
-        if (!activeResult || get("chartsPanel").hidden) return;
         try {
             const info = await api(endpoint());
             if (current !== version) return;
@@ -170,6 +195,10 @@
                 for (const [code, name] of Object.entries(data.territorios[level])) areas.push([`${level}:${code}`, name]);
             }
             fill(territory, areas);
+            if (requestedCategory && !category.querySelector(`[value="${requestedCategory}"]`)?.hidden) {
+                category.value = requestedCategory;
+            }
+            requestedCategory = null;
             layout();
         } catch (error) {
             if (current !== version) return;
@@ -178,6 +207,19 @@
         }
     }
 
+    let requestedCategory, requestedFigure;
+    document.addEventListener("pega:abrir-figuras", ({detail}) => {
+        requestedFigure = detail.type;
+        if (data) {
+            category.value = detail.category;
+            layout();
+        } else {
+            requestedCategory = detail.category;
+            load();
+        }
+    });
+    document.addEventListener("pega:artefatos", () => { data = null; load(); });
+
     category.addEventListener("change", layout);
     base.addEventListener("change", layout);
     type.addEventListener("change", layout);
@@ -185,13 +227,19 @@
     for (const control of [series, territory, ...Object.keys(fields).map(key => get(`figure${key}`))]) {
         control.addEventListener("change", draw);
     }
-    get("figureDpi").addEventListener("change", downloads);
-    get("figureEnlarge").addEventListener("click", () => {
+    const controls = imageExportControls("figure", () => {
         const dialog = get("figureDialog");
         dialog.querySelector("img").src = currentImage;
         dialog.showModal();
+    }, (format, dpi) => {
+        const url = downloadUrl(format, dpi);
+        if (url) requestImageDownload(url);
     });
+    controls.dpi.addEventListener("change", downloads);
     document.addEventListener("pega:result", () => {
+        ++version;
+        requestedCategory = null;
+        requestedFigure = null;
         data = null;
         clearPreview();
         for (const name of ["Start", "End", "CompareStart", "CompareEnd"]) get(`figure${name}`).value = "";

@@ -24,15 +24,16 @@
 
     function clear() {
         temporal = null;
-        for (const id of ["temporalTables", "temporalCharts", "temporalDownloads"]) get(id).hidden = true;
+        for (const id of ["temporalTables", "temporalCharts"]) get(id).hidden = true;
         status("temporalStatus");
         status("temporalChartStatus");
         preview.replaceChildren();
+        get("temporalFiles").hidden = true;
     }
 
     function show(data, executed) {
         temporal = data;
-        for (const id of ["temporalTables", "temporalCharts", "temporalDownloads"]) get(id).hidden = false;
+        for (const id of ["temporalTables", "temporalCharts"]) get(id).hidden = false;
         options(pollutant, data.resumo.map((row, i) => [String(i), label(row)]), "Selecione");
         pollutant.selectedIndex = 1;
         get("temporalWeights").textContent = `Somas dos pesos: horário bruto ${number.format(data.somas_pesos.horario_original)}, horário normalizado ${number.format(data.somas_pesos.horario)}, semanal ${number.format(data.somas_pesos.semanal)}, combinado ${number.format(data.somas_pesos.combinado)}. Os 168 intervalos repartem a massa da base sem calendário.`;
@@ -41,10 +42,6 @@
         renderTable([["hora", "Hora"], ["peso_original", "Peso no R"], ["peso", "Peso normalizado"]],
             data.horario, "temporalHourly");
         renderTable([["dia", "Dia do perfil"], ["peso", "Peso semanal"]], data.semanal, "temporalWeekly");
-        renderDownloads("temporalDownloads", endpoint(), [
-            ["perfil_temporal.json", "Baixar perfil e resumos (JSON)"],
-            ["alocacao_relativa.csv", "Baixar alocação relativa por fonte (CSV)"]
-        ]);
         const residual = data.balanco_especiacao.some(row => row.residuo_g);
         status("temporalStatus", `Perfil relativo disponível. ${residual ? "Os saldos da especiação permanecem fora da alocação." : ""}`, "success");
         if (executed) setStep(4);
@@ -168,18 +165,15 @@
             ["massa", "Massa alocada (g)"]], temporal.combinado.map(item => ({
             ...item, massa: number.format(item.peso * row.massa_base_g)
         })), "temporalCombined");
-        preview.replaceChildren(draw(false));
+        preview.replaceChildren(draw(true));
+        get("temporalFiles").hidden = false;
     }
 
-    function svgBlob() {
-        return new Blob([new XMLSerializer().serializeToString(draw(true))], {type: "image/svg+xml"});
-    }
-
-    function download(blob, format) {
+    function download(blob, filename) {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = `perfil-temporal-${source.value}-${plot.value}.${format}`;
+        link.download = filename;
         link.click();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
@@ -188,33 +182,43 @@
     source.addEventListener("change", () => load());
     get("temporalRun").addEventListener("click", () => load(true));
     for (const select of [plot, pollutant, unit]) select.addEventListener("change", redraw);
-    get("temporalSvg").addEventListener("click", () => download(svgBlob(), "svg"));
-    get("temporalPng").addEventListener("click", async () => {
-        const url = URL.createObjectURL(svgBlob());
+    const controls = imageExportControls("temporal", () => {
+        const dialog = get("temporalDialog");
+        dialog.querySelector("div").replaceChildren(preview.firstElementChild.cloneNode(true));
+        dialog.showModal();
+    }, async (format, dpi) => {
+        const svg = preview.firstElementChild;
+        if (!svg) return;
+        const row = selected();
+        const suffix = format === "png" ? `-${dpi}dpi` : "";
+        const name = [plot.value, temporal.ano, source.value, row.pol_origem, row.pol, unit.value, temporal.calculo_id.slice(0, 8)]
+            .join("-").replace(/[^A-Za-z0-9_.%-]+/g, "-") + suffix + "." + format;
+        const sourceBlob = new Blob([new XMLSerializer().serializeToString(svg)], {type: "image/svg+xml"});
+        if (format === "svg") {
+            download(sourceBlob, name);
+            return;
+        }
+        const url = URL.createObjectURL(sourceBlob);
+        controls.save.disabled = true;
         try {
             const image = new Image();
             image.src = url;
             await image.decode();
             const canvas = document.createElement("canvas");
-            canvas.width = Number(get("temporalDpi").value) * 8;
-            canvas.height = canvas.width * height / width;
+            canvas.width = (format === "png" ? Number(dpi) : 300) * 8;
+            canvas.height = Math.round(canvas.width * height / width);
             canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
-            const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
-            if (!blob) throw new Error("Não foi possível gerar o PNG.");
-            download(blob, "png");
+            const blob = await new Promise(resolve => canvas.toBlob(resolve,
+                format === "png" ? "image/png" : "image/jpeg", .98));
+            if (!blob) throw new Error("Não foi possível gerar a imagem.");
+            const result = format === "png" ? await embedPngDpi(blob, Number(dpi))
+                : temporalPdf(blob, canvas.width, canvas.height);
+            download(result, name);
         } catch (error) {
             status("temporalChartStatus", error.message, "error");
         } finally {
             URL.revokeObjectURL(url);
+            controls.save.disabled = false;
         }
-    });
-    get("temporalPdf").addEventListener("click", () => {
-        preview.replaceChildren(draw(true));
-        document.body.classList.add("temporal-print");
-        window.addEventListener("afterprint", () => {
-            document.body.classList.remove("temporal-print");
-            redraw();
-        }, {once: true});
-        window.print();
     });
 })();

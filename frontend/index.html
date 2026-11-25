@@ -17,11 +17,12 @@
           href="/static/style.css">
 </head>
 
-<body>
+<body id="inicio">
+    <a href="#conteudo" class="skip-link">Pular para o conte&uacute;do</a>
 
     <header class="header">
 
-        <a href="#" class="brand">
+        <a href="#inicio" class="brand" aria-label="PEGA, in&iacute;cio">
 
             <video class="brand-video"
                 autoplay
@@ -41,8 +42,9 @@
 
         </a>
 
-        <nav>
-            <a href="#">Início</a>
+        <button id="menuToggle" class="button secondary" type="button" aria-expanded="false" aria-controls="mainNav">Menu</button>
+        <nav id="mainNav" aria-label="Navega&ccedil;&atilde;o principal">
+            <a href="#inicio" aria-current="location">Início</a>
             <a href="#sobre">Sobre</a>
             <a href="#importacao">Inventário</a>
             <a href="#calculationResults">Resultados</a>
@@ -50,18 +52,22 @@
                rel="noopener">API</a>
         </nav>
 
-        <div class="server-status" id="serverStatus">
+        <label class="language-picker"><select id="uiLanguage" aria-label="Idioma da interface" title="Idioma da interface">
+            <option value="pt-BR">PT-BR</option>
+            <option value="en-US">EN-US</option>
+        </select></label>
+        <div class="server-status" id="serverStatus" role="status">
             <span class="status-dot"></span>
             Conectando...
         </div>
 
     </header>
 
-    <main class="container">
+    <main class="container" id="conteudo" tabindex="-1">
 
         <!-- APRESENTAÇÃO -->
 
-        <section class="hero" id="sobre">
+        <section class="hero" aria-labelledby="homeTitle">
 
             <div class="hero-content">
 
@@ -69,7 +75,7 @@
                     TECNOLOGIA E CIÊNCIA ATMOSFÉRICA
                 </span>
 
-                <h1>
+                <h1 id="homeTitle">
                     Inventários de
                     <span>emissões atmosféricas.</span>
                 </h1>
@@ -83,6 +89,7 @@
                 <a href="#importacao" class="button">
                     Iniciar inventário
                 </a>
+                <a href="#sobre" class="button secondary">Conhecer o PEGA</a>
 
             </div>
 
@@ -104,24 +111,31 @@
         </section>
 
 
+        <section id="sobre" class="home-overview" aria-labelledby="aboutTitle">
+            <h2 id="aboutTitle">Sobre o PEGA</h2>
+            <div class="home-capabilities">
+                <article><h3>Inventariar</h3><p>Valide as fontes, configure os fatores e calcule as emiss&otilde;es.</p></article>
+                <article><h3>Analisar</h3><p>Explore esp&eacute;cies, perfis temporais, territ&oacute;rios e grades.</p></article>
+                <article><h3>Exportar</h3><p>Consulte tabelas, gr&aacute;ficos, relat&oacute;rios e produtos para modelagem.</p></article>
+            </div>
+        </section>
+
         <!-- IMPORTAÇÃO -->
 
         <ol id="inventorySteps" class="inventory-steps" aria-label="Etapas do inventário">
-            <li aria-current="step">Importação</li>
-            <li>Configuração</li>
-            <li>Emissões</li>
-            <li>Especiação química</li>
-            <li>Distribuição temporal</li>
-            <li>Distribuição espacial</li>
-            <li>Preparação para modelagem</li>
-            <li>Exportação</li>
+            <li aria-current="step">Importa&ccedil;&atilde;o<span>Dispon&iacute;vel</span></li>
+            <li>Valida&ccedil;&atilde;o<span>Pendente</span></li>
+            <li>Configura&ccedil;&atilde;o<span>Pendente</span></li>
+            <li>C&aacute;lculo das emiss&otilde;es<span>Pendente</span></li>
+            <li>An&aacute;lises complementares<span>Opcionais</span></li>
+            <li>Resultados e exporta&ccedil;&otilde;es<span>Pendente</span></li>
         </ol>
         <section class="panel" id="importacao">
 
             <div class="section-heading">
 
                 <span class="eyebrow">
-                    ETAPA 01
+                    DADOS DE ENTRADA
                 </span>
 
                 <h2>Importação de dados</h2>
@@ -144,7 +158,7 @@
 
                 <h3>Arraste e solte sua planilha</h3>
 
-                <p>Formatos aceitos: CSV, TXT e XLSX</p>
+                <p>CSV, TXT ou XLSX &middot; at&eacute; 50 MB</p>
 
                 <input
                     type="file"
@@ -166,6 +180,20 @@
 
             </div>
 
+
+            <section class="required-columns" aria-labelledby="requiredTitle">
+                <h3 id="requiredTitle">Colunas obrigat&oacute;rias</h3>
+                <dl>
+                    <div><dt><code>ID</code></dt><dd>Identificador da fonte ou atividade.</dd></div>
+                    <div><dt><code>Fuel_type</code></dt><dd>Tipo de combust&iacute;vel.</dd></div>
+                    <div><dt><code>Granted_power_MW</code></dt><dd>Pot&ecirc;ncia em MW.</dd></div>
+                    <div><dt><code>latitude</code></dt><dd>Latitude em graus decimais.</dd></div>
+                    <div><dt><code>longitude</code></dt><dd>Longitude em graus decimais.</dd></div>
+                    <div><dt><code>year</code></dt><dd>Ano de refer&ecirc;ncia.</dd></div>
+                    <div><dt><code>Fuel_consumed_plant_GJ</code></dt><dd>Consumo de combust&iacute;vel em GJ.</dd></div>
+                </dl>
+                <p>Cada linha representa uma atividade. Confira as unidades antes do envio.</p>
+            </section>
 
             <!-- PROGRESSO -->
 
@@ -276,7 +304,8 @@
 
         <section class="panel" id="processamento" hidden>
             <div class="section-heading">
-                <h2>Processamento</h2>
+                <h2>Configura&ccedil;&atilde;o e c&aacute;lculo</h2>
+                <p>Selecione o recorte e revise os fatores antes de calcular as emiss&otilde;es.</p>
             </div>
             <form id="calculationForm">
                 <div class="field-grid">
@@ -313,11 +342,21 @@
                     <button id="filesTab" type="button" role="tab" aria-controls="filesPanel" aria-selected="false" tabindex="-1">Arquivos</button>
                 </div>
                 <div id="overviewPanel" role="tabpanel" aria-labelledby="overviewTab">
-                    <p id="resultMetrics" class="field-note"></p>
+                    <dl id="resultMetrics" class="metric-grid" aria-label="Indicadores da execu&ccedil;&atilde;o"></dl>
                     <ul id="calculationWarnings" class="notice-list" hidden></ul>
+                    <div class="overview-heading"><h3>An&aacute;lises complementares</h3><p>Execute as an&aacute;lises opcionais conforme o objetivo do invent&aacute;rio.</p></div>
+                    <div class="analysis-grid">
+                    <article class="analysis-card">
+                    <header><h4>Especia&ccedil;&atilde;o qu&iacute;mica</h4><span data-status="speciationStatus">Dispon&iacute;vel</span></header>
+                    <p>Distribua a massa por esp&eacute;cie e confira o saldo por poluente de origem.</p>
                     <div class="actions"><button id="speciateButton" class="button" type="button">Executar especiação química</button></div>
                     <p id="speciationStatus" class="message" role="status" hidden></p>
                     <ul id="speciationWarnings" class="notice-list" hidden></ul>
+                    <button type="button" class="button secondary analysis-link" data-view="especiacao" data-ready="speciationStatus" hidden>Ver resultados</button>
+                    </article>
+                    <article class="analysis-card">
+                    <header><h4>Distribui&ccedil;&atilde;o temporal</h4><span data-status="temporalStatus">Dispon&iacute;vel</span></header>
+                    <p>Aplique os perfis relativos de 24, 7 e 168 intervalos, sem calend&aacute;rio.</p>
                     <div class="actions">
                         <label>Base temporal
                             <select id="temporalSource">
@@ -328,6 +367,11 @@
                         <button id="temporalRun" class="button" type="button">Executar distribuição temporal</button>
                     </div>
                     <p id="temporalStatus" class="message" role="status" hidden></p>
+                    <button type="button" class="button secondary analysis-link" data-view="temporal" data-ready="temporalStatus" hidden>Ver resultados</button>
+                    </article>
+                    <article class="analysis-card">
+                    <header><h4>Distribui&ccedil;&atilde;o espacial</h4><span data-status="spatialStatus">Dispon&iacute;vel</span></header>
+                    <p>Explore fontes e territ&oacute;rios do IBGE ou agregue as massas em uma grade.</p>
                     <div class="actions">
                         <label>Base espacial <select id="spatialSource">
                             <option value="original">Poluentes originais</option>
@@ -340,9 +384,13 @@
                     <p class="field-note">Para agregar em grade, forneça os polígonos das células com a propriedade id_grid e o EPSG das coordenadas.</p>
                     <p id="spatialStatus" class="message" role="status" hidden></p>
                     <p id="spatialBalance" class="field-note" hidden></p>
+                    <button type="button" class="button secondary analysis-link" data-view="espacial" data-ready="spatialStatus" hidden>Ver resultados</button>
+                    </article>
+                    <article class="analysis-card">
+                    <header><h4>Modelagem atmosf&eacute;rica</h4><span data-status="modelingStatus">Dispon&iacute;vel</span></header>
+                    <p>Agregue massas na grade Lambert de um <code>wrfinput</code>. O NetCDF intermedi&aacute;rio armazena massas em gramas, sem convers&atilde;o para <code>wrfchemi</code>.</p>
                     <details id="modelingPanel">
                         <summary>Preparação para modelagem · NetCDF</summary>
-                        <p class="field-note">Agregue massas em uma grade Lambert de um wrfinput. O produto é um inventário intermediário em gramas, ainda sem conversão para wrfchemi.</p>
                         <form id="modelingForm">
                             <div class="actions">
                                 <label>Base <select id="modelingSource">
@@ -358,8 +406,11 @@
                             </div>
                         </form>
                         <p id="modelingCalendarNote" class="field-note" hidden>UTC ou deslocamento fixo para todas as fontes. Os pesos do perfil são normalizados sobre o calendário do ano do inventário. Não há ajuste de horário de verão.</p>
-                        <p id="modelingStatus" class="message" role="status" hidden></p>
                     </details>
+                    <p id="modelingStatus" class="message" role="status" hidden></p>
+                    <button type="button" class="button secondary analysis-link" data-view="espacial" data-ready="modelingStatus" data-figure="dominio-wrf" hidden>Ver dom&iacute;nio WRF</button>
+                    </article>
+                    </div>
                 </div>
                 <div id="tablesPanel" role="tabpanel" aria-labelledby="tablesTab" hidden>
                     <h3>Emissões por poluente</h3>
@@ -454,21 +505,15 @@
                                 <label id="figureCompareStartLabel" hidden>Início da comparação <input type="date" id="figureCompareStart"></label>
                                 <label id="figureCompareEndLabel" hidden>Fim da comparação <input type="date" id="figureCompareEnd"></label>
                                 <label>Idioma da figura <select id="figureLocale"><option value="pt">Português</option><option value="en">English</option></select></label>
-                                <label>Resolução PNG <select id="figureDpi"><option>300</option><option>600</option></select></label>
-                            </div>
+</div>
                         </details>
                         <p id="figureStatus" class="message" role="status" hidden></p>
                         <figure id="figurePreview" hidden>
                             <img id="figureImage" alt="Pré-visualização científica">
                             <figcaption id="figureCaption"></figcaption>
                         </figure>
-                        <div id="figureFiles" class="button-row" hidden>
-                            <button id="figureEnlarge" class="button secondary" type="button">Ampliar</button>
-                            <a id="figurePng" class="button secondary">PNG</a>
-                            <a id="figurePdf" class="button secondary">PDF</a>
-                            <a id="figureSvg" class="button secondary">SVG</a>
-                        </div>
-                        <dialog id="figureDialog"><form method="dialog"><button class="button secondary">Fechar</button></form><img alt="Figura científica ampliada"></dialog>
+                        <div id="figureFiles" class="image-exports" hidden></div>
+                        <dialog id="figureDialog" class="image-lightbox" aria-label="Visualiza&ccedil;&atilde;o ampliada"><form method="dialog"><button class="lightbox-close" type="submit" aria-label="Fechar visualiza&ccedil;&atilde;o" autofocus>&times;</button></form><img alt="Figura científica ampliada"></dialog>
                     </section>
 
                     <div id="relativeFigures" hidden>
@@ -491,26 +536,20 @@
                         </div>
                         <p id="temporalCaption" class="field-note"></p>
                         <div id="temporalPreview"></div>
-                        <div class="actions">
-                            <button id="temporalSvg" class="button secondary" type="button">Baixar SVG</button>
-                            <label>Resolução PNG <select id="temporalDpi">
-                                <option value="300">300 DPI a 8 pol.</option>
-                                <option value="600">600 DPI a 8 pol.</option>
-                            </select></label>
-                            <button id="temporalPng" class="button secondary" type="button">Baixar PNG</button>
-                            <button id="temporalPdf" class="button secondary" type="button">Imprimir / salvar PDF</button>
-                        </div>
+                        <div id="temporalFiles" class="image-exports" hidden></div>
+                        <dialog id="temporalDialog" class="image-lightbox" aria-label="Visualiza&ccedil;&atilde;o ampliada"><form method="dialog"><button class="lightbox-close" type="submit" aria-label="Fechar visualiza&ccedil;&atilde;o" autofocus>&times;</button></form><div></div></dialog>
                         <p id="temporalChartStatus" class="message" role="status" hidden></p>
                     </section>
                     </div>
                     <div id="spatialFigures" hidden>
                     <section id="spatialCharts" hidden>
-                        <h3>Mapas científicos</h3>
+                        <h3 id="spatialHeading">Mapa interativo</h3>
                         <div class="field-grid">
-                            <label>Mapa <select id="spatialMode">
+                            <label id="spatialModeLabel" hidden>Tipo de mapa científico <select id="spatialMode">
                                 <option value="pontos">Distribuição por fonte</option>
-                                <option value="interativo">Mapa interativo</option>
+                                <option value="interativo" hidden>Mapa interativo</option>
                                 <option value="territorial">Massa agregada por UF</option>
+
                                 <option value="regional">Massa total por região</option>
                             </select></label>
                             <label>Poluente ou espécie <select id="spatialSeries"></select></label>
@@ -526,9 +565,6 @@
                             </select></label>
                             <label>Idioma <select id="spatialLanguage">
                                 <option value="pt">Português</option><option value="en">English</option>
-                            </select></label>
-                            <label>Resolução PNG <select id="spatialDpi">
-                                <option value="300">300 DPI</option><option value="600">600 DPI</option>
                             </select></label>
                             <label>Marcadores <select id="spatialSize">
                                 <option value="cor">Cor</option><option value="tamanho">Tamanho</option><option value="ambos">Cor e tamanho</option>
@@ -562,7 +598,7 @@
                         <div id="spatialLegend" class="field-note" hidden></div>
                         <div id="spatialMap"></div>
                         <div id="spatialPointInfo" class="field-note" role="status" hidden></div>
-                        <div class="actions"><button id="spatialZoom" class="button secondary" type="button" hidden>Ampliar mapa</button></div>
+                        <div id="spatialFiles" class="image-exports" hidden></div>
                         <div id="spatialExploration" hidden>
                             <details open><summary>Ranking de fontes</summary>
                                 <div class="field-grid">
@@ -580,12 +616,41 @@
                     </div>
                 </div>
                 <div id="filesPanel" role="tabpanel" aria-labelledby="filesTab" hidden>
-                    <div id="downloads" class="actions"></div>
-                    <div id="speciesDownloads" class="actions" hidden></div>
-                    <div id="temporalDownloads" class="actions" hidden></div>
-                    <div id="spatialDownloads" class="actions" hidden></div>
-                    <div id="spatialMapDownloads" class="actions" hidden></div>
-                    <div id="modelingDownloads" class="actions" hidden></div>
+                    <div id="exportActions" class="actions export-toolbar" hidden>
+                        <output id="exportCount" aria-live="polite">0 selecionados</output>
+                        <label><input id="exportAll" type="checkbox"> Selecionar todos</label>
+                        <button class="button secondary" id="exportZip" type="button" disabled>Baixar selecionados em ZIP</button>
+                        <button class="button secondary" id="exportZipAll" type="button">Baixar execução em ZIP</button>
+                    </div>
+                    <progress id="exportProgress" aria-label="Progresso do ZIP" hidden></progress>
+                    <p id="exportStatus" role="status" hidden></p>
+                    <div id="exportCatalog"></div>
+                    <section id="activeFigureExports" class="export-group" hidden>
+                        <h3>Exportações com os filtros de Imagens e gráficos</h3>
+                        <div id="spatialMapDownloads" class="actions" hidden></div>
+                        <div id="filteredFigureDownloads" class="actions" hidden></div>
+                    </section>
+                    <form id="exportReport" class="export-group report-config" hidden>
+                        <h3>Personalizar relatório</h3>
+                        <div class="field-grid">
+                            <fieldset><legend>Documento</legend>
+                            <label>Relatório <select id="exportMode"><option value="completo">Completo</option><option value="resumido">Resumo executivo</option></select></label>
+                            <label>Idioma <select id="exportLanguage"><option value="pt">Português</option><option value="en">English</option></select></label>
+                            <label>Unidade <select id="exportUnit"><option>g</option><option>kg</option><option>t</option></select></label>
+                            </fieldset>
+                            <fieldset><legend>Conte&uacute;do</legend>
+                            <label>Poluentes <select id="exportPollutants" multiple size="4"></select></label>
+                            <label id="exportSectionsLabel">Seções adicionais <select id="exportSections" multiple size="4"></select></label>
+                            </fieldset>
+                            <fieldset><legend>Figuras e territ&oacute;rio</legend>
+                            <label><input id="exportChart" type="checkbox" checked> Incluir gráfico de emissões</label>
+                            <label id="exportMapLabel" hidden><input id="exportMap" type="checkbox"> Incluir mapa científico</label>
+                            <label id="exportTerritoryLabel" hidden>Território do mapa <select id="exportTerritory"></select></label>
+                            </fieldset>
+                        </div>
+                        <p id="exportReportPreview" aria-live="polite"></p>
+                        <button id="exportPdf" class="button secondary" type="submit">Gerar PDF personalizado</button>
+                    </form>
                 </div>
             </div>
         </section>
@@ -596,16 +661,21 @@
         PEGA — Inventários de Emissões Atmosféricas
     </footer>
 
-    <dialog id="spatialDialog">
-        <form method="dialog"><button type="submit" class="button secondary">Fechar mapa</button></form>
+    <dialog id="spatialDialog" class="image-lightbox" aria-label="Visualiza&ccedil;&atilde;o ampliada">
+        <form method="dialog"><button class="lightbox-close" type="submit" aria-label="Fechar visualiza&ccedil;&atilde;o" autofocus>&times;</button></form>
         <img alt="Mapa científico ampliado">
     </dialog>
+    <script src="/static/i18n-en.js"></script>
+    <script src="/static/i18n.js"></script>
+    <script src="/static/experiencia.js"></script>
     <script src="/static/script.js"></script>
+    <script src="/static/imagem-exportacao.js"></script>
     <script src="/static/temporal.js"></script>
     <script src="/static/mapa-interativo.js"></script>
     <script src="/static/espacial.js"></script>
     <script src="/static/modelagem.js"></script>
     <script src="/static/visualizacoes.js"></script>
+    <script src="/static/exportacoes.js"></script>
 
 </body>
 

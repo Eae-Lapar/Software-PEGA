@@ -7,6 +7,7 @@ import math
 from collections import defaultdict
 from datetime import date
 from functools import lru_cache
+from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import numpy as np
@@ -431,7 +432,7 @@ def gerar(pasta, op, formato, dpi, conferir):
         if len(existentes) >= 80 or usados >= limite:
             raise LimiteMapas("Limite de figuras desta execução atingido.")
         with TemporaryDirectory(dir=cache) as temporario:
-            temporaria = cache / temporario / arquivo.name
+            temporaria = Path(temporario) / arquivo.name
             figura = desenhar(pasta, modelo, op)
             try:
                 figura.savefig(temporaria, format=formato, dpi=dpi, facecolor="white")

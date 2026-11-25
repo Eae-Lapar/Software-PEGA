@@ -17,6 +17,7 @@ let supportedFuels = [];
 let supportedSectors;
 let activeResult = null;
 const inventoryKey = "pega.inventario";
+const resultKey = "pega.execucao";
 
 
 // STATUS DO SERVIDOR
@@ -169,11 +170,17 @@ function uploadFile(file) {
         return;
     }
 
+    if (file.size > 50 * 1024 * 1024) {
+        showMessage("O arquivo excede o limite de 50 MB.", "error");
+        return;
+    }
+
     uploading = true;
     updateControls();
 
     selectButton.disabled = true;
 
+    setStep(0, true);
     get("progressContainer").hidden = false;
 
     get("progressText").textContent =
@@ -204,6 +211,7 @@ function uploadFile(file) {
     xhr.upload.addEventListener("load", () => {
 
         updateProgress(100);
+        setStep(8, true);
 
         get("progressText").textContent =
             "Validando dados da planilha...";
@@ -268,6 +276,7 @@ function uploadFile(file) {
 function finishUpload() {
 
     uploading = false;
+    if (!inventory) setStep(0);
     updateControls();
 
     selectButton.disabled = false;
@@ -285,7 +294,7 @@ function showResults(data) {
     get("results").hidden = false;
 
     get("totalRows").textContent =
-        Number(data.total_linhas).toLocaleString("pt-BR");
+        number.format(data.total_linhas);
 
     get("years").textContent =
         data.validacao.anos.join(", ") || "—";
@@ -361,21 +370,7 @@ function renderTable(columns, rows, tableId = "previewTable") {
 
     thead.appendChild(headerRow);
 
-    rows.forEach(row => {
-
-        const tr = document.createElement("tr");
-
-        fields.forEach(([column]) => {
-
-            const td = document.createElement("td");
-
-            td.textContent = row[column] ?? "";
-
-            tr.appendChild(td);
-        });
-
-        tbody.appendChild(tr);
-    });
+    enhanceTable(table, fields, rows);
 }
 
 
@@ -432,7 +427,7 @@ const factorColumns = [
     ["pol", "Poluente"], ["ef", "Fator"], ["unit", "Unidade"],
     ["source", "Fonte"], ["reference", "Referência"], ["other", "Observação"]
 ];
-const number = new Intl.NumberFormat("pt-BR", {maximumSignificantDigits: 12});
+const number = pegaLocale.number({maximumSignificantDigits: 12});
 const sectorSelect = get("sectorSelect");
 const yearSelect = get("yearSelect");
 const fuelSelect = get("fuelSelect");
@@ -441,7 +436,10 @@ const historySelect = get("calculationHistory");
 function rememberInventory(id) {
     try {
         if (id) sessionStorage.setItem(inventoryKey, id);
-        else sessionStorage.removeItem(inventoryKey);
+        else {
+            sessionStorage.removeItem(inventoryKey);
+            sessionStorage.removeItem(resultKey);
+        }
     } catch {
         // O fluxo continua disponível quando o navegador bloqueia a sessão local.
     }
@@ -468,6 +466,7 @@ function status(id, message = "", type = "") {
     element.textContent = message;
     element.className = `message ${type}`;
     element.hidden = !message;
+    analysisState(id, message, type);
 }
 
 function options(select, items, placeholder) {
@@ -629,6 +628,11 @@ async function openProcessing() {
 function displayCalculation(data) {
     if (activeResult !== data.calculo_id) {
         activeResult = data.calculo_id;
+        try {
+            sessionStorage.setItem(resultKey, JSON.stringify([inventory.inventario_id, activeResult]));
+        } catch {
+            // A seleção continua ativa na página atual.
+        }
         clearSpeciation();
         loadSpeciation(data.calculo_id);
         document.dispatchEvent(new Event("pega:result"));
@@ -636,14 +640,7 @@ function displayCalculation(data) {
     get("resultsEmpty").hidden = true;
     get("historyLabel").hidden = false;
     get("resultContent").hidden = false;
-    get("resultMetrics").textContent = [
-        `${data.setor} · ${data.ano} · ${data.combustivel}`,
-        `${number.format(data.total_atividades)} atividades`,
-        `${number.format(data.total_fontes)} fontes`,
-        `${number.format(data.total_poluentes)} poluentes`,
-        `${number.format(data.total_registros)} registros`,
-        `${number.format(data.consumo_total_GJ)} GJ`
-    ].join(" | ");
+    showMetrics(data);
     showWarnings("calculationWarnings", data.avisos);
     renderTable([["pol", "Poluente"], ["emissions", "Emissão"], ["unit_emissions", "Unidade"]],
         data.resumo.map(row => ({...row, emissions: number.format(row.emissions)})), "emissionSummary");
@@ -651,28 +648,11 @@ function displayCalculation(data) {
         ["emissions", "Emissão (g)"]], data.previa, "emissionPreview");
     renderTable(factorColumns, data.fatores_utilizados, "usedFactors");
 
-    renderDownloads("downloads", resultUrl(data.calculo_id), [
-        ["emissoes_base.csv", "Baixar emissões (CSV)"], ["resumo.csv", "Baixar resumo (CSV)"],
-        ["fatores_utilizados.csv", "Baixar fatores (CSV)"], ["metadados.json", "Baixar metadados (JSON)"]
-    ]);
     updateControls();
 }
 
 function resultUrl(id) {
     return `${inventoryUrl()}/calculos/${encodeURIComponent(id)}`;
-}
-
-function renderDownloads(element, url, files) {
-    const downloads = get(element);
-    downloads.replaceChildren();
-    for (const [name, label] of files) {
-        const link = document.createElement("a");
-        link.href = `${url}/arquivos/${name}`;
-        link.download = name;
-        link.className = "button secondary";
-        link.textContent = label;
-        downloads.append(link);
-    }
 }
 
 async function loadHistory(current = null) {
@@ -683,7 +663,16 @@ async function loadHistory(current = null) {
     options(historySelect, data.calculos.map((item, index) => [item.calculo_id,
         `Execução ${data.calculos.length - index} · ${item.ano} · ${item.combustivel}`]), "Selecione uma execução");
     if (!data.calculos.length) return;
-    historySelect.value = current?.calculo_id ?? data.calculos[0].calculo_id;
+    let remembered;
+    try {
+        const [id, calculation] = JSON.parse(sessionStorage.getItem(resultKey) || "[]");
+        if (id === inventory.inventario_id && data.calculos.some(item => item.calculo_id === calculation)) {
+            remembered = calculation;
+        }
+    } catch {
+        // O histórico ainda pode abrir a primeira execução disponível.
+    }
+    historySelect.value = current?.calculo_id ?? remembered ?? data.calculos[0].calculo_id;
     if (current) displayCalculation(current);
     else await selectCalculation();
 }
@@ -708,9 +697,16 @@ async function selectCalculation() {
     }
 }
 
-function setStep(number) {
+function setStep(number, busy = false) {
+    const mapped = [0, 2, 3, 5, 4, 4, 4, 5, 1][number];
+    const labels = {done: "Conclu\u00edda", pending: "Pendente", ready: "Dispon\u00edvel",
+        busy: "Em processamento", optional: "Opcional"};
     [...get("inventorySteps").children].forEach((step, index) => {
-        if (index === number) step.setAttribute("aria-current", "step");
+        const state = index === mapped ? (busy ? "busy" : "ready")
+            : index === 4 ? "optional" : index < mapped || (mapped === 4 && index === 5) ? "done" : "pending";
+        step.dataset.state = state;
+        step.querySelector("span").textContent = labels[state];
+        if (index === mapped) step.setAttribute("aria-current", "step");
         else step.removeAttribute("aria-current");
     });
 }
@@ -741,7 +737,6 @@ resultTabs.forEach((tab, index) => {
 
 function clearSpeciation() {
     get("speciationTables").hidden = true;
-    get("speciesDownloads").hidden = true;
     get("speciationWarnings").hidden = true;
     get("speciateButton").hidden = false;
     status("speciationStatus");
@@ -752,7 +747,6 @@ function clearSpeciation() {
 function displaySpeciation(data) {
     get("speciateButton").hidden = true;
     get("speciationTables").hidden = false;
-    get("speciesDownloads").hidden = false;
     get("profileReference").textContent = data.referencia_perfil;
     showWarnings("speciationWarnings", data.avisos.map(motivo => ({motivo})));
     renderTable([["pol_origem", "Poluente de origem"], ["soma_fracoes", "Soma das frações"],
@@ -770,12 +764,6 @@ function displaySpeciation(data) {
         ["pol_origem", "Poluente de origem"], ["pol", "Espécie ou poluente"],
         ["emissions", "Emissão (g)"]], data.previa.map(row =>
         ({...row, emissions: number.format(row.emissions)})), "speciesPreview");
-    renderDownloads("speciesDownloads", `${resultUrl(data.calculo_id)}/especiacao`, [
-        ["emissoes_especiadas.csv", "Baixar emissões especiadas (CSV)"],
-        ["resumo_especies.csv", "Baixar resumo por espécie (CSV)"],
-        ["perfil_especiacao.csv", "Baixar perfil de especiação (CSV)"],
-        ["metadados_especiacao.json", "Baixar metadados da especiação (JSON)"]
-    ]);
     status("speciationStatus", `Especiação concluída. ${number.format(data.total_registros)} registros derivados.`, "success");
 }
 
@@ -825,6 +813,7 @@ get("calculationForm").addEventListener("submit", async event => {
         .map(select => [select.dataset.pollutant, select.value]));
     working = true;
     updateControls();
+    setStep(2, true);
     status("processingStatus", "Calculando emissões…");
     try {
         const data = await api(`${inventoryUrl()}/calcular`, {
@@ -854,7 +843,7 @@ get("calculationForm").addEventListener("submit", async event => {
 });
 
 get("deleteInventory").addEventListener("click", async () => {
-    if (!window.confirm("Excluir este inventário e todas as suas execuções?")) return;
+    if (!window.confirm(pegaLocale.translate("Excluir este inventário e todas as suas execuções?"))) return;
     working = true;
     updateControls();
     showMessage("Excluindo inventário…", "");
@@ -903,17 +892,12 @@ async function restoreInventory() {
 
 // RESPEITAR PREFERÊNCIA DE MOVIMENTO
 
-const video = document.querySelector(".hero-video video");
-
-if (video && window.matchMedia(
-    "(prefers-reduced-motion: reduce)"
-).matches) {
-
-    video.autoplay = false;
-
-    video.pause();
-
-    video.controls = true;
+if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    for (const video of document.querySelectorAll(".hero-video video, .brand-video")) {
+        video.autoplay = false;
+        video.pause();
+        if (video.closest(".hero-video")) video.controls = true;
+    }
 }
 
 
