@@ -1,0 +1,612 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>PEGA | Inventários de Emissões</title>
+
+    <link rel="icon"
+          href="/static/assets/logo-img.png">
+
+    <link rel="stylesheet"
+          href="/static/style.css">
+</head>
+
+<body>
+
+    <header class="header">
+
+        <a href="#" class="brand">
+
+            <video class="brand-video"
+                autoplay
+                muted
+                loop
+                playsinline
+                aria-hidden="true"
+                poster="/static/assets/logo-img.png">
+
+                <source
+                    src="/static/assets/Pega-bravo.mp4"
+                    type="video/mp4">
+
+            </video>
+
+            <span>PEGA</span>
+
+        </a>
+
+        <nav>
+            <a href="#">Início</a>
+            <a href="#sobre">Sobre</a>
+            <a href="#importacao">Inventário</a>
+            <a href="#calculationResults">Resultados</a>
+            <a href="/docs" target="_blank"
+               rel="noopener">API</a>
+        </nav>
+
+        <div class="server-status" id="serverStatus">
+            <span class="status-dot"></span>
+            Conectando...
+        </div>
+
+    </header>
+
+    <main class="container">
+
+        <!-- APRESENTAÇÃO -->
+
+        <section class="hero" id="sobre">
+
+            <div class="hero-content">
+
+                <span class="eyebrow">
+                    TECNOLOGIA E CIÊNCIA ATMOSFÉRICA
+                </span>
+
+                <h1>
+                    Inventários de
+                    <span>emissões atmosféricas.</span>
+                </h1>
+
+                <p>
+                    Uma plataforma para automatizar,
+                    padronizar e integrar o processamento
+                    de inventários de emissões atmosféricas.
+                </p>
+
+                <a href="#importacao" class="button">
+                    Iniciar inventário
+                </a>
+
+            </div>
+
+            <div class="hero-video">
+
+                <video autoplay muted loop playsinline
+                       preload="metadata">
+
+                    <source
+                        src="/static/assets/video.mp4"
+                        type="video/mp4">
+
+                    Seu navegador não suporta vídeos.
+
+                </video>
+
+            </div>
+
+        </section>
+
+
+        <!-- IMPORTAÇÃO -->
+
+        <ol id="inventorySteps" class="inventory-steps" aria-label="Etapas do inventário">
+            <li aria-current="step">Importação</li>
+            <li>Configuração</li>
+            <li>Emissões</li>
+            <li>Especiação química</li>
+            <li>Distribuição temporal</li>
+            <li>Distribuição espacial</li>
+            <li>Preparação para modelagem</li>
+            <li>Exportação</li>
+        </ol>
+        <section class="panel" id="importacao">
+
+            <div class="section-heading">
+
+                <span class="eyebrow">
+                    ETAPA 01
+                </span>
+
+                <h2>Importação de dados</h2>
+
+                <p>
+                    Envie a planilha contendo os dados
+                    das fontes de emissão.
+                </p>
+
+            </div>
+
+
+            <!-- ÁREA DE UPLOAD -->
+
+            <div class="drop-zone" id="dropZone">
+
+                <div class="upload-icon">
+                    &#8682;
+                </div>
+
+                <h3>Arraste e solte sua planilha</h3>
+
+                <p>Formatos aceitos: CSV, TXT e XLSX</p>
+
+                <input
+                    type="file"
+                    id="fileInput"
+                    accept=".csv,.txt,.xlsx"
+                    hidden>
+
+                <button
+                    type="button"
+                    class="button"
+                    id="selectButton">
+
+                    Selecionar arquivo
+
+                </button>
+
+                <span id="fileName"
+                      class="file-name"></span>
+
+            </div>
+
+
+            <!-- PROGRESSO -->
+
+            <div id="progressContainer"
+                 class="progress-container"
+                 hidden>
+
+                <div class="progress-info">
+                    <span id="progressText">
+                        Enviando arquivo...
+                    </span>
+
+                    <span id="progressValue">0%</span>
+                </div>
+
+                <div class="progress-track">
+                    <div id="progressBar"
+                         class="progress-bar"></div>
+                </div>
+
+            </div>
+
+
+            <!-- MENSAGENS -->
+
+            <div id="message"
+                 class="message"
+                 role="status"
+                 aria-live="polite"
+                 hidden>
+            </div>
+
+
+            <!-- RESULTADOS -->
+
+            <div id="results" hidden>
+
+                <div class="stats">
+
+                    <div class="stat-card">
+                        <span>Registros importados</span>
+                        <strong id="totalRows">0</strong>
+                    </div>
+
+                    <div class="stat-card">
+                        <span>Anos identificados</span>
+                        <strong id="years">—</strong>
+                    </div>
+
+                    <div class="stat-card">
+                        <span>Combustíveis</span>
+                        <strong id="fuels">—</strong>
+                    </div>
+
+                </div>
+
+                <div id="extraColumns"
+                     class="extra-columns"
+                     hidden>
+                </div>
+
+                <div class="preview">
+
+                    <h3>Prévia dos dados</h3>
+
+                    <p>Exibição de até 20 registros.</p>
+
+                    <div class="table-container">
+
+                        <table id="previewTable">
+                            <thead></thead>
+                            <tbody></tbody>
+                        </table>
+
+                    </div>
+
+                </div>
+
+                <div class="actions">
+
+                    <button
+                        type="button"
+                        class="button secondary"
+                        id="resetButton">
+
+                        Importar outro arquivo
+
+                    </button>
+
+                    <button
+                        type="button"
+                        class="button"
+                        id="nextButton"
+                        disabled>
+
+                        Avançar para processamento
+
+                    </button>
+
+                    <button type="button" class="button secondary danger"
+                            id="deleteInventory" hidden>Excluir inventário</button>
+
+                </div>
+
+            </div>
+
+        </section>
+
+        <section class="panel" id="processamento" hidden>
+            <div class="section-heading">
+                <h2>Processamento</h2>
+            </div>
+            <form id="calculationForm">
+                <div class="field-grid">
+                    <label>Setor <select id="sectorSelect" required></select></label>
+                    <label>Ano <select id="yearSelect" required></select></label>
+                    <label>Combustível <select id="fuelSelect" required></select></label>
+                </div>
+                <p id="fuelMapping" class="field-note" hidden></p>
+                <p id="processingStatus" class="message" role="status" hidden></p>
+                <div id="factorPanel" hidden>
+                    <details>
+                        <summary>Fatores aplicados automaticamente</summary>
+                        <div class="table-container"><table id="automaticFactors"></table></div>
+                    </details>
+                    <div id="factorChoices"></div>
+                    <ul id="factorWarnings" class="notice-list" hidden></ul>
+                </div>
+                <div class="actions">
+                    <button type="submit" class="button" id="calculateButton" disabled>Calcular emissões</button>
+                </div>
+            </form>
+        </section>
+
+        <section class="panel" id="calculationResults">
+            <div class="section-heading"><h2>Resultados</h2></div>
+            <p id="resultsEmpty" class="field-note">Os resultados ficam disponíveis após o cálculo de emissões.</p>
+            <label id="historyLabel" class="history-label" hidden>Execuções do inventário <select id="calculationHistory"></select></label>
+            <p id="resultStatus" class="message" role="status" hidden></p>
+            <div id="resultContent" hidden>
+                <div class="result-tabs" role="tablist" aria-label="Resultados da execução">
+                    <button id="overviewTab" type="button" role="tab" aria-controls="overviewPanel" aria-selected="true">Visão geral</button>
+                    <button id="tablesTab" type="button" role="tab" aria-controls="tablesPanel" aria-selected="false" tabindex="-1">Tabelas</button>
+                    <button id="chartsTab" type="button" role="tab" aria-controls="chartsPanel" aria-selected="false" tabindex="-1">Imagens e gráficos</button>
+                    <button id="filesTab" type="button" role="tab" aria-controls="filesPanel" aria-selected="false" tabindex="-1">Arquivos</button>
+                </div>
+                <div id="overviewPanel" role="tabpanel" aria-labelledby="overviewTab">
+                    <p id="resultMetrics" class="field-note"></p>
+                    <ul id="calculationWarnings" class="notice-list" hidden></ul>
+                    <div class="actions"><button id="speciateButton" class="button" type="button">Executar especiação química</button></div>
+                    <p id="speciationStatus" class="message" role="status" hidden></p>
+                    <ul id="speciationWarnings" class="notice-list" hidden></ul>
+                    <div class="actions">
+                        <label>Base temporal
+                            <select id="temporalSource">
+                                <option value="original">Poluentes originais</option>
+                                <option value="especiada">Especiação química</option>
+                            </select>
+                        </label>
+                        <button id="temporalRun" class="button" type="button">Executar distribuição temporal</button>
+                    </div>
+                    <p id="temporalStatus" class="message" role="status" hidden></p>
+                    <div class="actions">
+                        <label>Base espacial <select id="spatialSource">
+                            <option value="original">Poluentes originais</option>
+                            <option value="especiada">Especiação química</option>
+                        </select></label>
+                        <label>Grade opcional (GeoJSON)<input id="spatialGrid" type="file" accept=".geojson,.json"></label>
+                        <label>EPSG da grade <input id="spatialEpsg" type="number" value="4326" min="1"></label>
+                        <button id="spatialRun" class="button" type="button">Executar distribuição espacial</button>
+                    </div>
+                    <p class="field-note">Para agregar em grade, forneça os polígonos das células com a propriedade id_grid e o EPSG das coordenadas.</p>
+                    <p id="spatialStatus" class="message" role="status" hidden></p>
+                    <p id="spatialBalance" class="field-note" hidden></p>
+                    <details id="modelingPanel">
+                        <summary>Preparação para modelagem · NetCDF</summary>
+                        <p class="field-note">Agregue massas em uma grade Lambert de um wrfinput. O produto é um inventário intermediário em gramas, ainda sem conversão para wrfchemi.</p>
+                        <form id="modelingForm">
+                            <div class="actions">
+                                <label>Base <select id="modelingSource">
+                                    <option value="original">Poluentes originais</option>
+                                    <option value="especiada">Especiação química</option>
+                                </select></label>
+                                <label>Domínio NetCDF <input id="modelingDomain" type="file" required></label>
+                                <label><input id="modelingAnnual" type="checkbox"> Estimar no calendário anual</label>
+                                <label id="modelingClockLabel" hidden>Relógio do perfil
+                                    <input id="modelingClock" type="text" maxlength="6" placeholder="UTC ou -03:00">
+                                </label>
+                                <button id="modelingRun" type="submit" class="button">Preparar NetCDF</button>
+                            </div>
+                        </form>
+                        <p id="modelingCalendarNote" class="field-note" hidden>UTC ou deslocamento fixo para todas as fontes. Os pesos do perfil são normalizados sobre o calendário do ano do inventário. Não há ajuste de horário de verão.</p>
+                        <p id="modelingStatus" class="message" role="status" hidden></p>
+                    </details>
+                </div>
+                <div id="tablesPanel" role="tabpanel" aria-labelledby="tablesTab" hidden>
+                    <h3>Emissões por poluente</h3>
+                    <div class="table-container"><table id="emissionSummary"></table></div>
+                    <details>
+                        <summary>Prévia das emissões por atividade e fonte</summary>
+                        <div class="table-container"><table id="emissionPreview"></table></div>
+                    </details>
+                    <details>
+                        <summary>Fatores e referências usados</summary>
+                        <div class="table-container"><table id="usedFactors"></table></div>
+                    </details>
+                    <section id="speciationTables" hidden>
+                        <h3>Especiação química</h3>
+                        <details open>
+                            <summary>Balanço de massa por poluente de origem</summary>
+                            <div class="table-container"><table id="speciationBalance"></table></div>
+                        </details>
+                        <details open>
+                            <summary>Emissões por espécie e poluentes preservados</summary>
+                            <div class="table-container"><table id="speciesSummary"></table></div>
+                        </details>
+                        <details>
+                            <summary>Perfil, frações e massas moleculares do R</summary>
+                            <p id="profileReference" class="field-note"></p>
+                            <div class="table-container"><table id="speciesProfile"></table></div>
+                        </details>
+                        <details>
+                            <summary>Prévia dos resultados por atividade</summary>
+                            <div class="table-container"><table id="speciesPreview"></table></div>
+                        </details>
+                    </section>
+                    <section id="temporalTables" hidden>
+                        <h3>Distribuição temporal relativa</h3>
+                        <p id="temporalWeights" class="field-note"></p>
+                        <details open><summary>Massas da base por poluente ou espécie</summary>
+                            <div class="table-container"><table id="temporalSummary"></table></div>
+                        </details>
+                        <details><summary>Perfil horário</summary>
+                            <div class="table-container"><table id="temporalHourly"></table></div>
+                        </details>
+                        <details><summary>Perfil semanal</summary>
+                            <div class="table-container"><table id="temporalWeekly"></table></div>
+                        </details>
+                        <details><summary>Perfil combinado</summary>
+                            <div class="table-container"><table id="temporalCombined"></table></div>
+                        </details>
+                    </section>
+                    <section id="spatialTables" hidden>
+                        <h3>Distribuição espacial</h3>
+                        <label>Série da tabela <select id="spatialTableSeries"></select></label>
+                        <details open><summary>Prévia das fontes (até 100 registros)</summary>
+                            <div class="table-container"><table id="spatialSourcesTable"></table></div>
+                        </details>
+                        <details id="spatialCellsDetails"><summary>Prévia por célula (até 100 registros)</summary>
+                            <div class="table-container"><table id="spatialCellsTable"></table></div>
+                        </details>
+                    </section>
+                    <section id="modelingTables" hidden>
+                        <details>
+                            <summary>Balanço de massa · domínio NetCDF</summary>
+                            <div class="table-container"><table id="modelingBalance"></table></div>
+                        </details>
+                    </section>
+                </div>
+                <div id="chartsPanel" role="tabpanel" aria-labelledby="chartsTab" hidden>
+                    <label class="field-note">Categoria
+                        <select id="figureCategory">
+                            <option value="emissoes">Emissões</option>
+                            <option value="especiacao" hidden>Especiação</option>
+                            <option value="temporal" hidden>Temporal</option>
+                            <option value="espacial">Espacial</option>
+                        </select>
+                    </label>
+                    <section id="figureControls" hidden>
+                        <div class="field-grid">
+                            <label>Visualização <select id="figureType"></select></label>
+                            <label id="figureBaseLabel">Base <select id="figureBase"></select></label>
+                            <label id="figureSeriesLabel">Poluente ou espécie <select id="figureSeries"></select></label>
+                            <label id="figureUnitLabel">Unidade <select id="figureUnit"></select></label>
+                            <label id="figureTerritoryLabel">Território <select id="figureTerritory"></select></label>
+                            <label id="figureStartLabel" hidden>Data inicial <input type="date" id="figureStart"></label>
+                            <label id="figureEndLabel" hidden>Data final <input type="date" id="figureEnd"></label>
+                        </div>
+                        <details>
+                            <summary>Configurações avançadas</summary>
+                            <div class="field-grid">
+                                <label id="figureScaleLabel">Escala <select id="figureScale"><option value="linear">Linear</option><option value="log">Logarítmica</option></select></label>
+                                <label>Paleta <select id="figurePalette"><option>viridis</option><option>plasma</option><option>cividis</option></select></label>
+                                <label id="figureOrderLabel">Ordenação <select id="figureOrder"><option value="maior">Maior massa primeiro</option><option value="menor">Menor massa primeiro</option></select></label>
+                                <label id="figureTopLabel">Número de fontes <input id="figureTop" type="number" min="1" max="30" value="10"></label>
+                                <label id="figureCompareStartLabel" hidden>Início da comparação <input type="date" id="figureCompareStart"></label>
+                                <label id="figureCompareEndLabel" hidden>Fim da comparação <input type="date" id="figureCompareEnd"></label>
+                                <label>Idioma da figura <select id="figureLocale"><option value="pt">Português</option><option value="en">English</option></select></label>
+                                <label>Resolução PNG <select id="figureDpi"><option>300</option><option>600</option></select></label>
+                            </div>
+                        </details>
+                        <p id="figureStatus" class="message" role="status" hidden></p>
+                        <figure id="figurePreview" hidden>
+                            <img id="figureImage" alt="Pré-visualização científica">
+                            <figcaption id="figureCaption"></figcaption>
+                        </figure>
+                        <div id="figureFiles" class="button-row" hidden>
+                            <button id="figureEnlarge" class="button secondary" type="button">Ampliar</button>
+                            <a id="figurePng" class="button secondary">PNG</a>
+                            <a id="figurePdf" class="button secondary">PDF</a>
+                            <a id="figureSvg" class="button secondary">SVG</a>
+                        </div>
+                        <dialog id="figureDialog"><form method="dialog"><button class="button secondary">Fechar</button></form><img alt="Figura científica ampliada"></dialog>
+                    </section>
+
+                    <div id="relativeFigures" hidden>
+                    <section id="temporalCharts" hidden>
+                        <h3>Gráfico temporal</h3>
+                        <div class="field-grid">
+                            <label>Visualização <select id="temporalPlot">
+                                <option value="horario">Perfil horário</option>
+                                <option value="semanal">Perfil semanal</option>
+                                <option value="combinado">Perfil de 168 horas</option>
+                                <option value="calor">Mapa de calor temporal</option>
+                            </select></label>
+                            <label>Poluente ou espécie <select id="temporalPollutant"></select></label>
+                            <label>Unidade <select id="temporalUnit">
+                                <option value="%">Peso relativo (%)</option>
+                                <option value="g">Gramas (g)</option>
+                                <option value="kg">Quilogramas (kg)</option>
+                                <option value="t">Toneladas (t)</option>
+                            </select></label>
+                        </div>
+                        <p id="temporalCaption" class="field-note"></p>
+                        <div id="temporalPreview"></div>
+                        <div class="actions">
+                            <button id="temporalSvg" class="button secondary" type="button">Baixar SVG</button>
+                            <label>Resolução PNG <select id="temporalDpi">
+                                <option value="300">300 DPI a 8 pol.</option>
+                                <option value="600">600 DPI a 8 pol.</option>
+                            </select></label>
+                            <button id="temporalPng" class="button secondary" type="button">Baixar PNG</button>
+                            <button id="temporalPdf" class="button secondary" type="button">Imprimir / salvar PDF</button>
+                        </div>
+                        <p id="temporalChartStatus" class="message" role="status" hidden></p>
+                    </section>
+                    </div>
+                    <div id="spatialFigures" hidden>
+                    <section id="spatialCharts" hidden>
+                        <h3>Mapas científicos</h3>
+                        <div class="field-grid">
+                            <label>Mapa <select id="spatialMode">
+                                <option value="pontos">Distribuição por fonte</option>
+                                <option value="interativo">Mapa interativo</option>
+                                <option value="territorial">Massa agregada por UF</option>
+                                <option value="regional">Massa total por região</option>
+                            </select></label>
+                            <label>Poluente ou espécie <select id="spatialSeries"></select></label>
+                            <label>Unidade <select id="spatialUnit">
+                                <option>g</option><option>kg</option><option>t</option>
+                            </select></label>
+                            <label>Paleta <select id="spatialPalette">
+                                <option value="viridis">Viridis</option><option value="plasma">Plasma</option>
+                                <option value="inferno">Inferno</option><option value="cividis">Cividis</option>
+                            </select></label>
+                            <label>Escala <select id="spatialScale">
+                                <option value="linear">Linear</option><option value="log">Logarítmica</option>
+                            </select></label>
+                            <label>Idioma <select id="spatialLanguage">
+                                <option value="pt">Português</option><option value="en">English</option>
+                            </select></label>
+                            <label>Resolução PNG <select id="spatialDpi">
+                                <option value="300">300 DPI</option><option value="600">600 DPI</option>
+                            </select></label>
+                            <label>Marcadores <select id="spatialSize">
+                                <option value="cor">Cor</option><option value="tamanho">Tamanho</option><option value="ambos">Cor e tamanho</option>
+                            </select></label>
+                            <label>Nível territorial <select id="spatialLevel">
+                                <option value="brasil">Brasil</option><option value="regiao">Região</option><option value="uf">Unidade federativa</option>
+                            </select></label>
+                            <label id="spatialTerritoryLabel" hidden>Território <select id="spatialTerritory"></select></label>
+                            <label>Escala de cores <select id="spatialScope">
+                                <option value="nacional">Nacional</option><option value="local">Território selecionado</option>
+                            </select></label>
+                        </div>
+                        <p id="spatialIndicators" class="field-note" aria-live="polite"></p>
+                        <div id="spatialControls" class="actions" hidden>
+                            <button id="spatialNational" type="button" class="button secondary">Voltar ao Brasil</button>
+                            <button id="spatialIn" type="button" class="button secondary" aria-label="Aproximar mapa">+</button>
+                            <button id="spatialOut" type="button" class="button secondary" aria-label="Afastar mapa">−</button>
+                            <button id="spatialRestore" type="button" class="button secondary">Restaurar enquadramento</button>
+                            <button id="spatialFullscreen" type="button" class="button secondary">Tela cheia</button>
+                        </div>
+                        <fieldset id="spatialLayers" class="spatial-layers" hidden>
+                            <legend>Camadas</legend>
+                            <label><input type="checkbox" id="showStates" checked> Limites estaduais</label>
+                            <label><input type="checkbox" id="showRegions"> Limites regionais</label>
+                            <label><input type="checkbox" id="showPoints" checked> Fontes pontuais</label>
+                            <label><input type="checkbox" id="showTerritorial"> Massa total por UF</label>
+                            <label><input type="checkbox" id="showHeat"> Intensidade visual das emissões</label>
+                            <label id="spatialGridLayer" hidden><input type="checkbox" id="showGrid"> Grade e massa por célula</label>
+                        </fieldset>
+                        <p id="spatialMapStatus" class="message" role="status" hidden></p>
+                        <div id="spatialLegend" class="field-note" hidden></div>
+                        <div id="spatialMap"></div>
+                        <div id="spatialPointInfo" class="field-note" role="status" hidden></div>
+                        <div class="actions"><button id="spatialZoom" class="button secondary" type="button" hidden>Ampliar mapa</button></div>
+                        <div id="spatialExploration" hidden>
+                            <details open><summary>Ranking de fontes</summary>
+                                <div class="field-grid">
+                                    <label>Exibir <select id="spatialTop"><option>5</option><option selected>10</option><option>20</option></select></label>
+                                    <label>Ordenação <select id="spatialOrder"><option value="desc">Decrescente</option><option value="asc">Crescente</option></select></label>
+                                </div>
+                                <ol id="spatialRanking" class="spatial-ranking"></ol>
+                            </details>
+                            <details open><summary>Comparação territorial</summary>
+                                <label>Comparar <select id="spatialCompare"><option value="uf">UFs</option><option value="regiao">Regiões</option></select></label>
+                                <ul id="spatialComparison" class="spatial-ranking"></ul>
+                            </details>
+                        </div>
+                    </section>
+                    </div>
+                </div>
+                <div id="filesPanel" role="tabpanel" aria-labelledby="filesTab" hidden>
+                    <div id="downloads" class="actions"></div>
+                    <div id="speciesDownloads" class="actions" hidden></div>
+                    <div id="temporalDownloads" class="actions" hidden></div>
+                    <div id="spatialDownloads" class="actions" hidden></div>
+                    <div id="spatialMapDownloads" class="actions" hidden></div>
+                    <div id="modelingDownloads" class="actions" hidden></div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer>
+        PEGA — Inventários de Emissões Atmosféricas
+    </footer>
+
+    <dialog id="spatialDialog">
+        <form method="dialog"><button type="submit" class="button secondary">Fechar mapa</button></form>
+        <img alt="Mapa científico ampliado">
+    </dialog>
+    <script src="/static/script.js"></script>
+    <script src="/static/temporal.js"></script>
+    <script src="/static/mapa-interativo.js"></script>
+    <script src="/static/espacial.js"></script>
+    <script src="/static/modelagem.js"></script>
+    <script src="/static/visualizacoes.js"></script>
+
+</body>
+
+</html>

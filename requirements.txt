@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+python-multipart
+pandas
+numpy
+openpyxl
+matplotlib
+shapely>=2.1
+pyproj
+netCDF4
