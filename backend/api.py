@@ -4,7 +4,10 @@ import re
 import json
 
 from uuid import uuid4
+from threading import Lock, BoundedSemaphore
+from time import monotonic
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
 from backend.services.calculos import calcular_emissoes, normalizar_combustivel
 from backend.services.especiacao import (
@@ -41,7 +44,7 @@ from backend.services.territorio import (
 from backend.services.temporal import (
     caminho_temporal, consultar_temporal, origem_csv, salvar_temporal, transmitir_alocacao,
 )
-from backend.services import visualizacoes
+from backend.services import exportacoes, relatorios, visualizacoes
 from backend.services.modelagem import ARQUIVO_METADADOS, ARQUIVO_NETCDF, publicar as publicar_modelagem, resultado_atual
 
 from backend.services.importacao import ANO_MAXIMO, ANO_MINIMO, pega_importar
@@ -104,6 +107,7 @@ async def limpeza_periodica():
         await asyncio.to_thread(
             limpar_expirados
         )
+        await asyncio.to_thread(limpar_lotes)
 
         await asyncio.sleep(300)
 
@@ -406,6 +410,246 @@ def recurso_indisponivel():
     )
 
 
+ROTA_EXPORTACOES = "/api/inventarios/{inventario_id}/calculos/{calculo_id}/exportacoes"
+HEADERS_EXPORTACAO = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
+TRAVA_LOTES = Lock()
+VAGAS_GERACAO = BoundedSemaphore(2)
+LOTES = {}
+
+
+class OpcoesRelatorio(BaseModel):
+    modo: Literal["completo", "resumido"] = "completo"
+    idioma: Literal["pt", "en"] = "pt"
+    unidade: Literal["g", "kg", "t"] = "g"
+    poluentes: list[str] = Field(default_factory=list, max_length=64)
+    secoes: list[Literal["fatores", "especiacao", "temporal", "espacial", "modelagem"]] | None = Field(
+        default=None, max_length=5)
+    grafico: bool = True
+    mapa: bool = False
+    nivel: Literal["brasil", "uf", "regiao"] = "brasil"
+    codigo: str = Field(default="", max_length=2)
+
+
+class SolicitacaoLote(BaseModel):
+    variantes: dict[str, str] = Field(default_factory=dict, max_length=64)
+    token: str = Field(pattern=r"^[0-9a-f-]{36}$")
+    arquivos: list[str] | None = Field(default=None, max_length=exportacoes.LIMITE_ARQUIVOS)
+
+
+def limpar_lotes():
+    with TRAVA_LOTES:
+        vencidos = [chave for chave, lote in LOTES.items()
+                    if lote.get("prazo", float("inf")) <= monotonic() or not chave[0].is_dir()]
+        for chave in vencidos:
+            LOTES.pop(chave)["temporario"].cleanup()
+
+
+def liberar_exportacao(temporario):
+    try:
+        temporario.cleanup()
+    finally:
+        VAGAS_GERACAO.release()
+
+
+def obter_vaga():
+    if not VAGAS_GERACAO.acquire(blocking=False):
+        raise HTTPException(status_code=429, detail="Há exportações em geração. Tente novamente em instantes.",
+                            headers=HEADERS_EXPORTACAO)
+
+
+def erro_exportacao(erro):
+    codigo = 413 if isinstance(erro, exportacoes.LimiteExportacao) else 400
+    if isinstance(erro, LimiteMapas):
+        codigo = 429
+    return HTTPException(status_code=codigo, detail=str(erro), headers=HEADERS_EXPORTACAO)
+
+
+def escritor_relatorio(request, pasta, itens, conferir):
+    inventario_id = pasta.parent.parent.name
+    try:
+        _, inventario = verificar_acesso(inventario_id, request.cookies.get("pega_session"))
+    except (PermissionError, FileNotFoundError) as erro:
+        raise recurso_indisponivel() from erro
+    secoes = {
+        "fatores": [],
+        "especiacao": [i for i in itens.values() if i.nome == "metadados_especiacao.json"],
+        "temporal": [i for i in itens.values() if i.categoria == "temporal" and i.formato == "json"],
+        "espacial": [i for i in itens.values() if i.categoria == "espacial" and i.formato == "json"],
+        "modelagem": [i for i in itens.values() if i.categoria == "modelagem" and i.formato == "json"],
+    }
+
+    def escrever(destino, opcoes):
+        relatorios.escrever(destino, pasta, inventario, secoes, opcoes, app.version, conferir)
+
+    return escrever
+
+
+def opcoes_relatorio_padrao(itens, item):
+    mapa = item.id == "relatorios/relatorio-cientifico.pdf" and "espacial/original-metadados.json" in itens
+    return OpcoesRelatorio(mapa=mapa)
+
+
+@app.get(ROTA_EXPORTACOES)
+def consultar_exportacoes(request: Request, inventario_id: str, calculo_id: str):
+    pasta = pasta_privada(request, inventario_id, calculo_id)
+    itens = exportacoes.listar(pasta)
+    calculo = ler_metadados_calculo(pasta)
+    return JSONResponse({"arquivos": [item.publico() for item in itens.values()],
+                         "poluentes": [r["pol"] for r in calculo["resumo"]],
+                         "territorios": visualizacoes.catalogo()},
+                        headers=HEADERS_EXPORTACAO)
+
+
+def baixar_gerado(item, opcoes, request, pasta, itens, conferir):
+    tipo = exportacoes.TIPOS[item.formato]
+    headers = {**HEADERS_EXPORTACAO, "Content-Disposition": f'attachment; filename="{item.nome}"'}
+    if item.gerador[0] in ("temporal", "anual"):
+        return StreamingResponse(exportacoes.blocos(item, pasta, None, None, None, conferir),
+                                 media_type=tipo, headers=headers)
+    obter_vaga()
+    temporario = None
+    publicado = False
+    try:
+        temporario = TemporaryDirectory(dir=pasta)
+        local = Path(temporario.name)
+        destino = local / f"saida.{item.formato}"
+        escrever = escritor_relatorio(request, pasta, itens, conferir)
+        with destino.open("wb") as saida:
+            for bloco in exportacoes.blocos(item, pasta, local, opcoes, escrever, conferir):
+                saida.write(bloco)
+        conferir()
+        resposta = FileResponse(destino, media_type=tipo, filename=item.nome, headers=headers,
+                                background=BackgroundTask(liberar_exportacao, temporario))
+        publicado = True
+        return resposta
+    except FileNotFoundError as erro:
+        raise recurso_indisponivel() from erro
+    except (ValueError, LimiteMapas) as erro:
+        raise erro_exportacao(erro) from erro
+    finally:
+        if not publicado:
+            if temporario is not None:
+                liberar_exportacao(temporario)
+            else:
+                VAGAS_GERACAO.release()
+
+
+@app.get(ROTA_EXPORTACOES + "/arquivo/{categoria}/{nome}")
+def baixar_exportacao(request: Request, inventario_id: str, calculo_id: str, categoria: str, nome: str):
+    pasta = pasta_privada(request, inventario_id, calculo_id)
+    itens = exportacoes.listar(pasta)
+    item = itens.get(f"{categoria}/{nome}")
+    if item is None:
+        raise recurso_indisponivel()
+    if item.caminho:
+        return FileResponse(item.caminho, media_type=exportacoes.TIPOS[item.formato],
+                            filename=item.nome, headers=HEADERS_EXPORTACAO)
+    return baixar_gerado(item, opcoes_relatorio_padrao(itens, item), request, pasta, itens,
+                         lambda: pasta_privada(request, inventario_id, calculo_id))
+
+
+@app.post(ROTA_EXPORTACOES + "/relatorio")
+def baixar_relatorio(opcoes: OpcoesRelatorio, request: Request, inventario_id: str, calculo_id: str):
+    pasta = pasta_privada(request, inventario_id, calculo_id)
+    itens = exportacoes.listar(pasta)
+    nome = "relatorio-cientifico.pdf" if opcoes.modo == "completo" else "resumo-executivo.pdf"
+    return baixar_gerado(itens[f"relatorios/{nome}"], opcoes, request, pasta, itens,
+                         lambda: pasta_privada(request, inventario_id, calculo_id))
+
+
+@app.post(ROTA_EXPORTACOES + "/lotes")
+def preparar_lote(dados: SolicitacaoLote, request: Request, inventario_id: str, calculo_id: str):
+    pasta = pasta_privada(request, inventario_id, calculo_id)
+    chave = (pasta, dados.token)
+    itens = exportacoes.listar(pasta)
+    conferir = lambda: pasta_privada(request, inventario_id, calculo_id)
+    limpar_lotes()
+    try:
+        selecionados = exportacoes.selecao(itens, dados.arquivos, dados.variantes)
+    except ValueError as erro:
+        raise erro_exportacao(erro) from erro
+    obter_vaga()
+    temporario = None
+    pronto = False
+    registrado = False
+    lote = None
+    try:
+        with TRAVA_LOTES:
+            if chave in LOTES or len(LOTES) >= 2:
+                raise HTTPException(status_code=429, detail="A central já tem dois lotes reservados.",
+                                    headers=HEADERS_EXPORTACAO)
+            temporario = TemporaryDirectory(dir=pasta)
+            lote = {"temporario": temporario, "total": len(selecionados), "concluidos": 0, "atual": "", "pronto": False}
+            LOTES[chave] = lote
+            registrado = True
+        local = Path(temporario.name)
+        escrever = escritor_relatorio(request, pasta, itens, conferir)
+        calculo = ler_metadados_calculo(pasta)
+        meta = {k: valor for k, valor in calculo.items() if k != "status"}
+        meta["versao_pega"] = app.version
+
+        def progresso(concluidos, atual):
+            with TRAVA_LOTES:
+                lote.update(concluidos=concluidos, atual=atual)
+
+        incluidos, omitidos = exportacoes.escrever_zip(
+            local / "execucao.zip", selecionados,
+            lambda item: exportacoes.blocos(item, pasta, local, opcoes_relatorio_padrao(itens, item), escrever, conferir),
+            meta, conferir, progresso)
+        with TRAVA_LOTES:
+            lote.update(pronto=True, concluidos=len(selecionados), atual="", prazo=monotonic() + 300)
+        pronto = True
+        return JSONResponse({"pronto": True, "incluidos": incluidos, "omitidos": omitidos},
+                            headers=HEADERS_EXPORTACAO)
+    except FileNotFoundError as erro:
+        conferir()
+        etapa = (lote or {}).get("atual") or "preparação"
+        raise HTTPException(status_code=409, detail=f"Um arquivo mudou durante o ZIP ({etapa}). Atualize e tente novamente.",
+                            headers=HEADERS_EXPORTACAO) from erro
+    except (ValueError, LimiteMapas) as erro:
+        raise erro_exportacao(erro) from erro
+    finally:
+        if not pronto and registrado:
+            with TRAVA_LOTES:
+                LOTES.pop(chave, None)
+            temporario.cleanup()
+        VAGAS_GERACAO.release()
+
+
+@app.get(ROTA_EXPORTACOES + "/lotes/{token}")
+def consultar_lote(token: str, request: Request, inventario_id: str, calculo_id: str):
+    pasta = pasta_privada(request, inventario_id, calculo_id)
+    limpar_lotes()
+    with TRAVA_LOTES:
+        lote = LOTES.get((pasta, token))
+        if lote is None:
+            raise recurso_indisponivel()
+        dados = {k: lote[k] for k in ("total", "concluidos", "atual", "pronto")}
+    return JSONResponse(dados, headers=HEADERS_EXPORTACAO)
+
+
+@app.get(ROTA_EXPORTACOES + "/lotes/{token}/zip")
+def baixar_lote(token: str, request: Request, inventario_id: str, calculo_id: str):
+    pasta = pasta_privada(request, inventario_id, calculo_id)
+    limpar_lotes()
+    with TRAVA_LOTES:
+        chave = (pasta, token)
+        lote = LOTES.get(chave)
+        if lote is None or not lote["pronto"] or lote.get("baixando"):
+            raise recurso_indisponivel()
+        lote.update(baixando=True, prazo=monotonic() + 600)
+    temporario = lote["temporario"]
+
+    def limpar():
+        with TRAVA_LOTES:
+            LOTES.pop(chave, None)
+        temporario.cleanup()
+
+    return FileResponse(Path(temporario.name) / "execucao.zip", media_type="application/zip",
+                        filename=f"PEGA-{calculo_id}.zip", headers=HEADERS_EXPORTACAO,
+                        background=BackgroundTask(limpar))
+
+
 @app.get("/api/inventarios/{inventario_id}/calculos")
 def consultar_calculos(inventario_id: str, request: Request, response: Response):
     pasta = pasta_privada(request, inventario_id)
@@ -706,7 +950,12 @@ def consultar_mapa(inventario_id: str, calculo_id: str, origem: OrigemTemporal, 
     except ValueError as erro:
         raise HTTPException(status_code=400, detail=str(erro)) from erro
     tipo = {"png": "image/png", "pdf": "application/pdf", "svg": "image/svg+xml"}[formato]
-    return FileResponse(arquivo, filename=f"mapa-{modo}-{dados['ano']}-{origem}-{serie}-{codigo or nivel}.{formato}", media_type=tipo,
+    partes = [f"mapa-{modo}", str(dados["ano"]), origem, selecionada["pol_origem"], selecionada["pol"],
+              codigo or nivel, paleta]
+    if formato == "png":
+        partes.append(f"{dpi}dpi")
+    nome = re.sub(r"[^A-Za-z0-9_.-]+", "-", "-".join(partes))
+    return FileResponse(arquivo, filename=f"{nome}-{calculo_id[:8]}-{arquivo.stem[:8]}.{formato}", media_type=tipo,
                         content_disposition_type="attachment" if download else "inline",
                         headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
@@ -752,9 +1001,10 @@ def figura_cientifica(
     except ValueError as erro:
         raise HTTPException(status_code=400, detail=str(erro)) from erro
     ano = ler_metadados_calculo(pasta)["ano"]
-    partes = [tipo, str(ano), origem, pol_origem, pol, nivel, codigo]
+    partes = [tipo, str(ano), origem, pol_origem, pol, nivel, codigo, paleta,
+              f"{dpi}dpi" if formato == "png" else ""]
     nome = re.sub(r"[^A-Za-z0-9_.-]+", "-", "-".join(filter(None, partes)))[:150]
-    return FileResponse(arquivo, filename=f"{nome}.{formato}",
+    return FileResponse(arquivo, filename=f"{nome}-{calculo_id[:8]}-{arquivo.stem[:8]}.{formato}",
                         media_type={"png": "image/png", "pdf": "application/pdf", "svg": "image/svg+xml"}[formato],
                         content_disposition_type="attachment" if download else "inline",
                         headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})

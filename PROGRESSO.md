@@ -372,3 +372,126 @@ Para repetir a auditoria sem modificar as entradas:
 **Validação:** 25 testes passaram no Windows (21,909 s) e no Docker com Python 3.11.18 (16,250 s). Os quatro testes novos cobrem geometria em três resoluções, cálculo independente de área e MAPFAC sintético, estrutura e unidades de um alvo sintético, e transições IANA. A regressão de ponta a ponta passou no Chrome, incluindo NetCDF intermediário e mapa interativo. A suíte Docker usou a imagem local de auditoria e o armazenamento de pesquisa ficou fora dos testes.
 
 O refinamento de UX/UI permanece registrado para depois da etapa científica. A Etapa 7 aguarda aprovação.
+
+## Etapa 7 — Mapas e visualizações científicas
+
+### Comparação com o PEGA em R
+
+| Recurso original | Resultado em Python |
+| --- | --- |
+| Barras de totais em `R/mapas.R` e CSV em `R/relatorios.R` | Totais por série em escala linear ou logarítmica, com unidade selecionável. Cada barra mantém seu poluente de origem. |
+| CSV por usina, posição e poluente em `R/relatorios.R` | Ranking, participação percentual, curva acumulada e histograma por série. O denominador percentual inclui todas as fontes da seleção, inclusive as que ficam abaixo do limite de exibição. |
+| Barras semanais e linha horária em `R/mapas.R` | Perfis relativos de 24, 7 e 168 intervalos, mapa de calor, consulta de valores e exportações. As massas relativas usam a base selecionada e o perfil sem calendário. |
+| Mapas local e nacional da média horária em grade em `R/mapas.R` | Mapa IBGE 2025 interativo, mapas científicos com massa por fonte, UF, região ou célula e mapas do domínio WRF. As figuras de massa acumulada têm grandeza distinta da média horária de saída do R. |
+| Planilhas e perfis do R | Balanço, frações e massas derivadas por espécie, com origem e saldo explícitos. Projeção anual, comparação de datas e mapas de massa do período usam a metodologia aprovada e são extensões do fluxo Python. |
+
+### Funcionalidades entregues
+
+- A aba **Imagens e gráficos** reúne Emissões, Especiação, Temporal e Espacial. A disponibilidade acompanha os resultados já produzidos pela execução selecionada.
+- **Espacial** abre no **Mapa interativo** quando os resultados espaciais estão disponíveis. **Mapa científico** é uma opção distinta, com mapas por fonte, UF, região e grade GeoJSON quando disponível. A seleção preserva poluente, território, marcadores e demais controles do mapa. O visualizador SVG da Etapa 5.1 continua sendo usado.
+- A regressão da Etapa 7 agrupava as duas opções em um único controle que abria no mapa estático. O seletor agora abre o visualizador interativo diretamente. Durante atualizações, o mapa, a legenda e os indicadores anteriores ficam montados até a resposta atual. O foco em elementos do SVG é restaurado quando o elemento volta a existir. O teste do navegador retém uma resposta de território para comparar altura, rolagem, foco e filtro antes, durante e depois da atualização.
+- Os totais territoriais usam a classificação detalhada do IBGE 2025. No gráfico nacional por UF ou região, fontes sem atribuição aparecem por situação. Os mapas coropléticos mostram apenas massas atribuídas aos territórios desenhados.
+- Os gráficos químicos mostram massas original, alocada e residual, massas individuais e participação sobre a massa original, além das frações publicadas. A separação por poluente de origem preserva espécies de mesmo nome.
+- As figuras anuais exibem massas projetadas mensais, diárias, por hora do dia, em sequência horária e no calendário. O intervalo de datas é inclusivo no relógio de modelagem. Somatórios e mapas usam a massa mapeada e as frações horárias gravadas no NetCDF. Comparações aparecem como séries sobrepostas, com totais por período. O calendário e a grade mostram um período por figura.
+- O mapa WRF usa os limites das células da projeção Lambert gravados no NetCDF. O mapa do domínio distingue fontes com coordenadas válidas dentro, fora e em borda. Coordenadas inválidas permanecem no balanço da Modelagem. O recorte temporal espacial se aplica à grade WRF quando a projeção anual existe.
+- Figuras sob demanda em fundo branco, prévia individual, ampliação e PNG a 300/600 DPI, PDF e SVG. As figuras de grade WRF preservam texto e eixos em PDF/SVG e rasterizam a camada de células para limitar o tamanho. Os downloads exigem a sessão da execução e usam `Cache-Control: no-store`.
+
+### Limites e pendências
+
+- Cada prévia transfere somente a figura selecionada e a listagem de opções. A leitura anual usa até 8.784 pesos e, para mapas, a matriz da série escolhida. Rankings e gráficos de participação exibem até 30 fontes. O cache privado de figuras é limitado a 80 arquivos e 192 MiB por execução. Os exemplos e tempos de teste usam dados sintéticos, sem teste de carga representativo de inventários grandes.
+- ZIP de imagens, organização em lote e refinamento geral da UX permanecem no planejamento. A projeção anual e os mapas temporais consultam a grade WRF selecionada. O NetCDF intermediário continua sendo a saída da modelagem.
+- A validação de `wrfchemi` pelo executável de destino depende de confirmação do domínio, das divergências de unidade nas 21 séries químicas, do mecanismo químico, das massas moleculares, da distribuição vertical e da convenção temporal definitiva. Também seguem pendentes a confirmação da unidade e magnitude do consumo energético real e a ampliação dos setores Tier 1.
+
+### Execução local e exemplos
+
+```powershell
+./.venv/Scripts/python.exe -m uvicorn backend.api:app --host 127.0.0.1 --port 8000
+./.venv/Scripts/python.exe -B -m unittest discover -s tests -v
+```
+
+Em http://127.0.0.1:8000, calcule um inventário e abra **Resultados → Imagens e gráficos**. Execute a especiação, a análise temporal ou a espacial na Visão geral para abrir as respectivas visualizações. Para consultar figuras anuais, envie um domínio em **Modelagem**, habilite a projeção anual e informe a convenção temporal. Para reproduzir o teste de navegador, use as dependências de desenvolvimento, Node.js, Playwright Core e Chrome.
+
+```powershell
+$env:PEGA_PLAYWRIGHT_MODULE = (Resolve-Path '.venv/pega-browser/node_modules/playwright-core').Path
+$env:PEGA_BROWSER_EXECUTABLE = 'C:/Program Files/Google/Chrome/Application/chrome.exe'
+./.venv/Scripts/python.exe -B -m tests.browser_smoke
+```
+
+Os exemplos sintéticos estão em `exemplos/`. Para regenerar as figuras e capturas da etapa, defina `$env:PEGA_EXEMPLOS = (Resolve-Path exemplos).Path` e execute o teste `tests.test_pega.PegaTest.test_visualizacoes_massas_privacidade_e_exportacoes` e o teste de navegador. Os mapas dos exemplos espaciais anteriores continuam disponíveis.
+
+### Retomada e validação
+
+- A auditoria encontrou a restauração do seletor de mapas implementada no diretório de trabalho, junto com o teste de regressão e as capturas sintéticas. O histórico local tinha dois commits; a restauração estava nas alterações ainda não registradas em commit.
+- O estado de carregamento do mapa é limpo ao sair da visualização com uma consulta em andamento. A revisão preservou o componente SVG e a cartografia IBGE 2025.
+- Windows: 26 testes passaram em 22,858 s. Chrome: passou o fluxo sintético com mapa interativo como primeira opção espacial, mapa científico por célula, seleção por região e UF, consulta de fontes, filtro por poluente, zoom, estabilidade de altura/rolagem/foco e download territorial. O teste de figuras regenerou os exemplos científicos. A sintaxe do JavaScript e `git diff --check` passaram.
+- Docker: 26 testes passaram em 14,491 s na construção da imagem de auditoria local em Python 3.11, com rede desativada durante os testes. O contexto foi limitado a código, dados públicos e testes.
+
+## Etapa 8 — Central de exportações e relatórios
+
+A validação da Etapa 7 liberou a implementação do catálogo e dos relatórios. O refinamento geral da interface permanece na Etapa 9.
+
+O catálogo consulta somente a execução ativa e mostra tamanho para arquivos persistidos e geração sob demanda para derivados. A central integra dados padronizados, fatores, resíduos químicos, perfis relativos, CSV horário anual e resumo mensal, balanços e totais territoriais, NetCDF e figuras. Os totais por UF e região incluem categorias sem atribuição. As figuras da configuração atual continuam acessíveis na central por links individuais.
+
+O ZIP selecionado ou completo é produzido em blocos dentro da pasta privada da execução. O limite é de 64 arquivos, 256 MiB descompactados, dois lotes reservados por processo e 120 segundos aferidos durante a escrita. A tela consulta o progresso por arquivo. O lote fica disponível por cinco minutos para iniciar o download e é removido após a transferência. O manifesto registra execução, configuração, fatores, referências e data de geração. Os metadados derivados documentam as metodologias aplicadas.
+
+O PDF usa resultados persistidos, inclui capa e paginação e oferece seleção de idioma, unidade, poluentes, seções, gráfico e território do mapa. A tradução cobre os textos do relatório. Referências, avisos científicos já registrados e nomes de chaves dos balanços preservam seus textos de origem.
+
+### Reprodução e escopo da validação
+
+- Execute `./.venv/Scripts/python.exe -B -m unittest discover -s tests -v` para verificar a API. O teste de central valida catálogo, PDF, seleção, limite do ZIP, autorização e correspondência byte a byte com o CSV individual. O teste de modelagem relê o CSV anual e o resumo mensal e verifica o fechamento em 399.000 g de PM2.5 na grade sintética.
+- O fluxo Chrome testa a seleção individual, por categoria e global, baixa o ZIP e um PDF executivo em inglês e confere a largura a 390 px. Para regenerar os exemplos, use `PEGA_EXEMPLOS` com os comandos da Etapa 7 e rode a suíte.
+- A geração em lote cobre os itens do catálogo, incluindo figuras nacionais e relatórios padrão. Recortes interativos e PDFs personalizados têm downloads individuais. O progresso do lote é mantido no processo que o gerou. Os testes de desempenho usam cenários sintéticos e execução local com um único servidor.
+- Arquivos principais da central: `backend/api.py`, `backend/services/exportacoes.py`, `backend/services/relatorios.py`, `frontend/exportacoes.js`, `frontend/index.html` e `frontend/style.css`. Os testes e exemplos usam armazenamento temporário. Cálculos e NetCDF intermediário continuam sob as metodologias registradas nas etapas anteriores.
+
+### Validação final em 25/11/2026
+
+- Windows: 27 testes em 37,929 s. Docker em Python 3.11: 27 testes em 32,841 s na imagem local `pega-etapa8-auditoria-local`. Chrome: fluxo de ponta a ponta em 27,780 s. Sintaxe do JavaScript e `git diff --check` aprovados.
+- Ensaio sintético local de duas fontes com especiação, perfil relativo e classificação espacial: PDF completo em 3,82 s (780 KiB), ZIP de dois CSV em 0,04 s (4 KiB) e ZIP completo em 7,78 s (3,38 MiB). Tempos incluem geração e transferência pelo cliente de teste. A sequência reutilizou o cache do mapa. O ensaio não mede carga concorrente ou inventários de grande porte.
+- Exemplos regeneráveis em `exemplos/`: capturas interativas do Brasil e Rio de Janeiro, captura da central, PDF completo em português e PDF em inglês com seleção de PM2.5 e mapa do Rio de Janeiro. Os PDFs foram abertos pelo renderizador local do Windows.
+
+### Próximo marco
+
+A Etapa 9 aguarda aprovação. Permanecem as pendências científicas de `wrfchemi`: domínio e configuração WRF-Chem de destino, mecanismo, unidades das 21 séries divergentes, massas moleculares, área física, regra vertical e convenção temporal definitiva. A confirmação da unidade e magnitude do consumo real e a ampliação Tier 1 continuam abertas.
+
+## Etapa 8.1 — ZIP e download direto das visualizações
+
+- A rotina de figuras juntava a pasta de cache ao caminho já devolvido por `TemporaryDirectory`. No Python 3.11 com armazenamento relativo, isso duplicava o prefixo e causava `FileNotFoundError` ao gerar as figuras do ZIP. A rota convertia a falha em “Resultado indisponível”. O teste anterior usava armazenamento absoluto. A montagem agora usa diretamente o caminho temporário retornado.
+- O ZIP informa inclusões e omissões, com os motivos no manifesto e na interface. Um opcional que ficar indisponível antes da escrita pode ser omitido. Artefatos essenciais ausentes, seleção desatualizada, mudança durante a escrita e limites de recursos recebem erros identificáveis.
+- As prévias de gráficos, mapas científicos e perfis temporais têm controles comuns logo abaixo. O mapa interativo oferece o mapa científico por fonte com os parâmetros de poluente, território e estilo, enquanto a navegação e as camadas continuam no mapa interativo. A aba Arquivos preserva os downloads contextuais.
+- Os controles usam a configuração da prévia já renderizada. O perfil temporal interativo reutiliza seu SVG na ampliação e no download. Seu PDF incorpora a arte renderizada em 300 DPI. PNG do perfil grava a resolução em metadados. Os arquivos científicos gerados no servidor usam nomes com os parâmetros principais e a assinatura da configuração.
+- A imagem Docker da Etapa 8 reproduziu HTTP 404 com “Resultado indisponível” para um inventário sintético com especiação, temporal e espacial, usando caminho de armazenamento relativo. No Chrome, a simulação do caminho temporário do Python 3.11 com a montagem anterior também impediu a prévia científica.
+- A execução selecionada no histórico é lembrada na aba do navegador e é restaurada somente se ainda estiver disponível para o mesmo inventário.
+- Validação final: 27 testes no Windows (42,817 s), 27 no Docker Python 3.11 (37,018 s) e fluxo aprovado no Chrome. O navegador baixou ZIP parcial, completo, por categoria e por seleção. Conferiu PNG 300/600 DPI, SVG, PDF, duas paletas, Rio de Janeiro, São Paulo, PM2.5 e BC, parâmetros da prévia, rolagem, foco e largura a 390 px. A suíte de API verificou omissão informada no manifesto, limites, isolamento e expiração.
+- Capturas sintéticas: `exemplos/controles-mapa-cientifico.png`, `exemplos/controles-perfil-temporal.png`, `exemplos/interface-projecao-anual-sintetica.png` e `exemplos/interativo-rio.png`. A Etapa 9 aguarda aprovação.
+
+## Etapa 9 — Experiência de uso
+
+Etapas 7, 8 e 8.1 aprovadas. A auditoria encontrou links ocultos no celular, etapas opcionais no mesmo indicador das etapas obrigatórias, métricas em uma linha, análises com controles dispersos e tabelas sem ferramentas de consulta. A base de comparação visual está nas capturas da Etapa 8.1. A revisão reaproveita os fluxos atuais e o SVG interativo.
+
+O fluxo de inventário agora usa seis etapas com validação explícita. A Visão geral usa oito indicadores com unidade explícita e quatro cards opcionais. Tabelas reutilizam os recortes existentes com busca, ordenação, paginação e CSV correspondente onde disponível. A navegação por abas mantém as prévias enquanto não há mudança de execução ou de artefatos. A central exibe contagem de seleção e a personalização do PDF está agrupada por documento, conteúdo e figuras.
+
+A validação responsiva cobre os painéis de Resultados em 390, 768, 1024, 1366 e 1920 px. Em 390 px, o navegador também percorre o menu por teclado e verifica o fechamento com Escape. A busca de PSO4 confirma que as duas origens continuam consultáveis. A correção de largura foi feita nas colunas dos cards e nos campos da análise.
+
+Capturas sintéticas em `exemplos/etapa9/`: início, importação, configuração, dashboard, análises, tabelas, gráficos, mapa, exportações, relatórios e mobile. Para comparar, veja `exemplos/central-exportacoes-sintetica.png`, `exemplos/interativo-rio.png` e `exemplos/interface-projecao-anual-sintetica.png` das etapas anteriores. As capturas anteriores usam enquadramentos próprios, pois vieram dos cenários de validação de cada etapa.
+
+A busca e a paginação se limitam ao conjunto já carregado na tabela. Arquivos completos são obtidos pelos downloads existentes. Os testes de interface usam dados sintéticos e Chrome com tamanhos de viewport controlados. Permanece pendente validar em dispositivos físicos e com tecnologias assistivas dedicadas. Nenhum modelo de planilha com aprovação identificada foi publicado na interface.
+
+Para reproduzir as capturas, crie a pasta `exemplos/etapa9`, defina `PEGA_UX_CAPTURAS` com o caminho absoluto e rode o fluxo Chrome descrito na Etapa 7. A suíte de API roda com `./.venv/Scripts/python.exe -B -m unittest discover -s tests -v`.
+
+Validação da revisão em 25/11/2026: 27 testes no Windows em 44,874 s, 27 no Docker com Python 3.11 em 39,403 s, e fluxo Chrome em 57,900 s com capturas e cinco larguras. O fluxo verifica o mapa interativo, histórico, PNG/PDF/SVG, ZIP completo e parcial, relatórios e NetCDF. A suíte verifica isolamento, expiração e exclusão. Os tempos incluem as operações do cenário sintético e não caracterizam carga de produção. A prévia permanece na tela durante a atualização do gráfico, com indicação de carregamento e downloads suspensos até a nova figura estar pronta.
+
+A Etapa 10 aguarda aprovação. Continuam em aberto as validações científicas para `wrfchemi` no WRF-Chem de destino, a unidade e a magnitude do consumo energético real e a ampliação dos setores Tier 1. O NetCDF intermediário permanece disponível.
+
+## Etapa 9.1 — Ajustes pontuais e internacionalização
+
+A interface da Etapa 9 foi aprovada. As sete colunas foram verificadas no módulo de importação e documentadas em card responsivo. Os três diálogos de ampliação compartilham o lightbox nativo. A preferência de idioma é local e atualiza os elementos existentes sem reconstruir as telas ou o SVG do mapa.
+
+Mantido o botão de ZIP completo (alternativa A). A mensagem anterior não distinguia tempo de tamanho, então o limite atingido no inventário real não pôde ser determinado retroativamente. A montagem já reutilizava o cache privado e gravava sequencialmente em blocos. Agora há diagnósticos separados, variantes agrupadas no frontend e uma variante por visualização no lote completo. O manifesto registra formato e DPI aplicável. Os limites existentes permanecem.
+
+Ensaio controlado em Windows com 505 atividades sintéticas de biomassa, 24 poluentes e o produtor real do CSV temporal relativo: esse único arquivo ultrapassou 256 MiB após 5.773 linhas-base processadas (268.445.582 bytes em 6,61 s, sem gravar o CSV inteiro). O volume descompactado é uma causa reproduzida e independente da renderização de figuras. O cenário não determina o motivo do erro retrospectivo do inventário real. A verificação prévia soma arquivos já persistidos; produtores de tamanho desconhecido são medidos em blocos.
+
+A preferência da interface usa `localStorage`. O catálogo inglês cobre rótulos HTML, atributos acessíveis, controles dinâmicos e mensagens conhecidas, com interpolação sem traduzir códigos. Campos nativos mantêm o comportamento do navegador, e datas de filtros têm indicação local via Intl sem mudar o valor ISO. As preferências explícitas de idioma de mapas, figuras e relatórios permanecem independentes.
+
+A montagem de um lote de 35 CSVs sintéticos (7.700.455 bytes) passou na verificação de integridade e no manifesto. Windows: 27 testes em 39,349 s. Docker com Python 3.11: 27 em 32,801 s. O Chrome verificou o fluxo de ponta a ponta em PT-BR e EN-US, as cinco larguras, a preferência após atualização, erro de importação traduzido, números do dashboard, estado do mapa, X/Esc/clique externo no lightbox e os controles de variantes. Expiração, isolamento e limites foram cobertos na suíte de API. Capturas em `exemplos/etapa9.1/`.
+
+O catálogo local tem fallback para o texto original quando uma mensagem da API não é reconhecida. A cobertura dos fluxos testados não equivale a uma verificação exaustiva de todos os caminhos de erro e avisos científicos. As versões pré-configuradas da central mantêm os parâmetros científicos existentes. A Etapa 10 aguarda aprovação.

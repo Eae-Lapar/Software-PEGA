@@ -3,12 +3,15 @@ import hashlib
 import io
 import json
 import math
+import os
 import tracemalloc
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
+from uuid import uuid4
+from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
 from openpyxl import Workbook
@@ -35,6 +38,97 @@ CABECALHOS = ("identificador", "combustível", "potência MW", "lat", "lon",
 
 
 class PegaTest(unittest.TestCase):
+    def test_central_exportacoes_pdf_lote_e_isolamento(self):
+        temporario = tempfile.TemporaryDirectory(dir=".")
+        self.addCleanup(temporario.cleanup)
+        armazenamento.STORAGE_DIR = Path(os.path.relpath(temporario.name))
+        inventario = self.upload(linhas=[
+            ("RJ01", "Biomass", 20, -22.92, -43.25, 2017, 1000, "sintético"),
+            ("SP01", "Biomass", 20, -23.50, -46.60, 2017, 700, "sintético"),
+        ]).json()["inventario_id"]
+        calculo = self.calcular(inventario, "Biomass").json()["calculo_id"]
+        base = f"/api/inventarios/{inventario}/calculos/{calculo}"
+        url = f"{base}/exportacoes"
+        self.assertEqual(self.client.post(f"{base}/especiacao").status_code, 200)
+        self.assertEqual(self.client.post(f"{base}/temporal/original").status_code, 200)
+        self.assertEqual(self.client.post(f"{base}/espacial/original").status_code, 200)
+        resposta = self.client.get(url)
+        self.assertEqual(resposta.status_code, 200, resposta.text)
+        self.assertEqual(resposta.headers["Cache-Control"], "no-store")
+        itens = {a["id"]: a for a in resposta.json()["arquivos"]}
+        self.assertIn("inventario/dados.csv", itens)
+        self.assertNotIn("modelagem", {i["categoria"] for i in itens.values()})
+        self.assertTrue(itens["temporal/alocacao-original.csv"]["sob_demanda"])
+        relatorio = self.client.get(f"{url}/arquivo/relatorios/relatorio-cientifico.pdf")
+        self.assertEqual(relatorio.status_code, 200, relatorio.text[:200] if relatorio.status_code != 200 else "")
+        self.assertTrue(relatorio.content.startswith(b"%PDF-"))
+        configuracao = {"idioma": "en", "unidade": "kg", "poluentes": ["PM2.5"],
+                        "mapa": True, "nivel": "uf", "codigo": "33"}
+        mapa = self.client.post(f"{url}/relatorio", json=configuracao)
+        self.assertEqual(mapa.status_code, 200, mapa.text[:200] if mapa.status_code != 200 else "")
+        self.assertEqual(self.client.post(f"{url}/relatorio", json={"poluentes": ["inexistente"]}).status_code, 400)
+        arquivo = "espacial/original-uf.csv"
+        territorio = self.client.get(f"{url}/arquivo/{arquivo}")
+        self.assertEqual(territorio.status_code, 200, territorio.text)
+        pm = [r for r in csv.DictReader(io.StringIO(territorio.text)) if r["pol"] == "PM2.5"]
+        resumo = next(r for r in self.client.get(base).json()["resumo"] if r["pol"] == "PM2.5")
+        self.assertAlmostEqual(sum(float(r["massa_g"]) for r in pm), resumo["emissions"])
+        token = str(uuid4())
+        escolhidos = ["inventario/resumo.csv", arquivo, "relatorios/resumo-executivo.pdf"]
+        lote = self.client.post(f"{url}/lotes", json={"token": token, "arquivos": escolhidos})
+        self.assertEqual(lote.status_code, 200, lote.text)
+        self.assertEqual(lote.json()["incluidos"], escolhidos)
+        progresso = f"{url}/lotes/{token}"
+        zip_url = f"{progresso}/zip"
+        self.assertEqual(self.client.get(progresso).json()["concluidos"], len(escolhidos))
+        with TestClient(app) as outra_sessao:
+            for rota in (url, progresso, zip_url, f"{url}/arquivo/{arquivo}"):
+                self.assertEqual(outra_sessao.get(rota).status_code, 404)
+        zip_bytes = self.client.get(zip_url)
+        self.assertEqual(zip_bytes.status_code, 200)
+        with ZipFile(io.BytesIO(zip_bytes.content)) as pacote:
+            self.assertEqual(set(pacote.namelist()), {*escolhidos, "manifesto.json"})
+            self.assertEqual(pacote.read(arquivo), territorio.content)
+            self.assertEqual(json.loads(pacote.read("manifesto.json"))["calculo_id"], calculo)
+        self.assertEqual(self.client.get(zip_url).status_code, 404)
+        self.assertEqual(self.client.post(f"{url}/lotes", json={"token": token, "arquivos": ["../../qualquer"]}).status_code, 400)
+        with patch("backend.services.exportacoes.LIMITE_BYTES", 10):
+            excesso = self.client.post(f"{url}/lotes", json={"token": token, "arquivos": escolhidos})
+        self.assertEqual(excesso.status_code, 413)
+        completo = self.client.post(f"{url}/lotes", json={"token": token})
+        self.assertEqual(completo.status_code, 200, completo.text)
+        with ZipFile(io.BytesIO(self.client.get(zip_url).content)) as pacote:
+            padrao = {chave for chave in itens if not chave.startswith("figuras/") or chave.endswith("-300dpi.png")}
+            self.assertEqual(set(pacote.namelist()), {*padrao, "manifesto.json"})
+            manifesto = json.loads(pacote.read("manifesto.json"))
+            self.assertTrue(all(figura["dpi"] == 300 for figura in manifesto["figuras"]))
+        with patch("backend.services.exportacoes.LIMITE_SEGUNDOS", -1):
+            tempo = self.client.post(f"{url}/lotes", json={"token": token, "arquivos": escolhidos[:1]})
+        self.assertEqual(tempo.status_code, 413)
+        self.assertIn("120 segundos", tempo.json()["detail"])
+        configurado = self.client.post(f"{url}/lotes", json={"token": token, "variantes": {
+            "totais": "figuras/totais.svg", "mapa-original": "figuras/mapa-original-600dpi.png"}})
+        self.assertEqual(configurado.status_code, 200, configurado.text)
+        with ZipFile(io.BytesIO(self.client.get(zip_url).content)) as pacote:
+            figuras = json.loads(pacote.read("manifesto.json"))["figuras"]
+            self.assertEqual({f["id"]: f.get("dpi") for f in figuras},
+                             {"figuras/totais.svg": None, "figuras/mapa-original-600dpi.png": 600})
+        with patch("backend.services.exportacoes.indexar", side_effect=FileNotFoundError):
+            omissao = self.client.post(f"{url}/lotes", json={"token": token, "arquivos": escolhidos[:2]})
+        self.assertEqual(omissao.status_code, 200, omissao.text)
+        self.assertEqual(omissao.json()["incluidos"], escolhidos[:1])
+        self.assertEqual(omissao.json()["omitidos"][0]["id"], arquivo)
+        with ZipFile(io.BytesIO(self.client.get(zip_url).content)) as pacote:
+            self.assertNotIn(arquivo, pacote.namelist())
+            self.assertEqual(json.loads(pacote.read("manifesto.json"))["omitidos"], omissao.json()["omitidos"])
+        self.assertEqual(self.client.delete(f"/api/inventarios/{inventario}").status_code, 200)
+        self.assertEqual(self.client.get(url).status_code, 404)
+        self.assertEqual(self.client.post(f"{url}/relatorio", json=configuracao).status_code, 404)
+        destino = os.environ.get("PEGA_EXEMPLOS")
+        if destino:
+            (Path(destino) / "relatorio-cientifico-sintetico.pdf").write_bytes(relatorio.content)
+            (Path(destino) / "relatorio-sintetico-mapa-en.pdf").write_bytes(mapa.content)
+
     def test_calendario_utc_fixo_bissexto_e_limites(self):
         comum, unidades, _ = calendario_anual(2017, "UTC")
         bissexto, unidades_fixas, _ = calendario_anual(2020, "-03:00")
@@ -91,6 +185,17 @@ class PegaTest(unittest.TestCase):
             "mapeada": 399000, "fora_grade": 26600, "borda_grade": 13300, "coordenada_invalida": 0
         })
         self.assertTrue(serie["referencias"][0]["fator_id"])
+        projecao = self.client.get(f"{base}/exportacoes/arquivo/temporal/projecao-anual-original.csv")
+        self.assertEqual(projecao.status_code, 200)
+        alocacoes = [r for r in csv.DictReader(io.StringIO(projecao.text)) if r["pol"] == "PM2.5"]
+        self.assertEqual(len(alocacoes), 8760)
+        self.assertEqual(alocacoes[0]["relogio_perfil"], "UTC")
+        self.assertAlmostEqual(math.fsum(float(r["massa_g"]) for r in alocacoes), 399000, places=8)
+        mensal = self.client.get(f"{base}/exportacoes/arquivo/temporal/resumo-mensal-original.csv")
+        self.assertEqual(mensal.status_code, 200)
+        meses = [r for r in csv.DictReader(io.StringIO(mensal.text)) if r["pol"] == "PM2.5"]
+        self.assertEqual(len(meses), 12)
+        self.assertAlmostEqual(math.fsum(float(r["massa_g"]) for r in meses), 399000, places=8)
         url = f"{rota}/arquivos/emissoes-grade.nc"
         download = self.client.get(url)
         self.assertEqual(download.status_code, 200)

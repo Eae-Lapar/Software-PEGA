@@ -10,17 +10,19 @@
     const layers = {estados: "showStates", regioes: "showRegions", pontos: "showPoints",
         territorial: "showTerritorial", calor: "showHeat", grade: "showGrid"};
     const units = {g: 1, kg: .001, t: .000001};
-    const percentage = new Intl.NumberFormat("pt-BR", {maximumFractionDigits: 2});
+    const percentage = pegaLocale.number({maximumFractionDigits: 2});
     const settings = {
         unidade: get("spatialUnit"), paleta: get("spatialPalette"), escala: get("spatialScale"),
-        idioma: get("spatialLanguage"), dpi: get("spatialDpi"), escopo: get("spatialScope")
+        idioma: get("spatialLanguage"), escopo: get("spatialScope")
     };
     let result;
     let states;
     let version = 0;
     let chartVersion = 0;
     let tableVersion = 0;
-    let viewer, lastSelection;
+    let viewer, lastSelection, lastSeries;
+    let exportContext;
+    let modoCientifico = "pontos";
 
     const territorialSelection = () => level.value === "brasil" ? "" : territory.value;
     const territorioUrl = (id, params) => `${endpoint()}/territorio/${id}?${params}`;
@@ -28,15 +30,17 @@
 
     const endpoint = () => `${resultUrl(activeResult)}/espacial/${source.value}`;
     const label = row => row.pol === row.pol_origem ? row.pol : `${row.pol} (${row.pol_origem})`;
-    const fields = ["spatialTables", "spatialCharts", "spatialDownloads"];
+    const fields = ["spatialTables", "spatialCharts"];
 
     function clear() {
         result = null;
         viewer = null;
         lastSelection = null;
+        lastSeries = null;
+        exportContext = null;
         chartVersion++;
         tableVersion++;
-        for (const id of [...fields, "spatialMapDownloads", "spatialBalance", "spatialZoom", "spatialPointInfo"]) {
+        for (const id of [...fields, "spatialMapDownloads", "spatialBalance", "spatialFiles", "spatialPointInfo"]) {
             get(id).hidden = true;
         }
         map.replaceChildren();
@@ -70,13 +74,11 @@
             mode.querySelector('option[value="grade"]')?.remove();
             if (data.grade) mode.add(new Option("Emissões agregadas em grade", "grade"));
             if (!mode.value) mode.value = "pontos";
+            if (!mode.querySelector(`option[value="${modoCientifico}"]`)) modoCientifico = "pontos";
             for (const id of fields) get(id).hidden = false;
             get("spatialCellsDetails").hidden = !data.grade;
             get("spatialGridLayer").hidden = !data.grade;
             if (!data.grade) get("showGrid").checked = false;
-            const files = [["fontes.csv", "Baixar fontes espaciais (CSV)"], ["metadados.json", "Baixar metadados espaciais (JSON)"]];
-            if (data.grade) files.push(["celulas.csv", "Baixar massas por célula (CSV)"], ["grade.geojson", "Baixar grade utilizada (GeoJSON)"]);
-            renderDownloads("spatialDownloads", endpoint(), files);
             status("spatialStatus", data.grade ? `Grade processada · EPSG:${data.grade_epsg}.` : "Fontes pontuais processadas.", "success");
             if (execute) setStep(5);
             updateBalance();
@@ -149,10 +151,11 @@
         for (const format of ["png", "pdf", "svg"]) {
             const params = query();
             params.set("download", "true");
+            params.set("dpi", get("spatialDpi").value);
             const a = document.createElement("a");
             a.href = mapUrl(format, params);
             a.className = "button secondary";
-            a.textContent = `Baixar mapa (${format.toUpperCase()}${format === "png" ? `, ${settings.dpi.value} DPI` : ""})`;
+            a.textContent = `Baixar mapa (${format.toUpperCase()}${format === "png" ? `, ${get("spatialDpi").value} DPI` : ""})`;
             list.append(a);
         }
     }
@@ -323,11 +326,17 @@
             regional.disabled = level.value === "uf";
             if (regional.disabled && mode.value === "regional") mode.value = "territorial";
         }
-        mapLinks();
-        if (!result || !series.value || get("chartsPanel").hidden || get("spatialFigures").hidden) return;
+        if (!result || !series.value || get("chartsPanel").hidden || get("spatialFigures").hidden) {
+            mapLinks();
+            map.removeAttribute("aria-busy");
+            return;
+        }
         map.setAttribute("aria-busy", "true");
+        exportControls.save.disabled = exportControls.zoom.disabled = true;
         status("spatialMapStatus", "Atualizando mapa…");
         try {
+            pegaLocale.defaultFigureLanguage("spatialLanguage");
+            mapLinks();
             const params = query();
             const camadas = capture();
             params.set("top", get("spatialTop").value);
@@ -349,11 +358,17 @@
                     anterior: lastSelection !== selecionado ? viewer?.caixa() : null,
                     atual: lastSelection === selecionado ? viewer?.caixa() : null});
                 lastSelection = selecionado;
-                const focused = map.contains(document.activeElement) ? document.activeElement.dataset.uf : null;
+                const active = document.activeElement;
+                let selector;
+                if (map.contains(active) && active.dataset.uf) selector = `[data-uf="${CSS.escape(active.dataset.uf)}"]`;
+                if (map.contains(active) && active.matches('circle[role="button"]')) {
+                    selector = `circle[role="button"][cx="${active.getAttribute("cx")}"][cy="${active.getAttribute("cy")}"]`;
+                }
+                if (lastSeries !== series.value) get("spatialPointInfo").hidden = true;
+                lastSeries = series.value;
                 map.replaceChildren(viewer.svg);
-                if (focused) viewer.svg.querySelector(`[data-uf="${CSS.escape(focused)}"]`)?.focus({preventScroll: true});
+                if (selector) viewer.svg.querySelector(selector)?.focus({preventScroll: true});
                 renderIndicadores(data);
-                get("spatialZoom").hidden = true;
                 for (const id of ["spatialControls", "spatialLayers", "spatialExploration"]) get(id).hidden = false;
                 renderLegenda(data, camadas);
                 const total = data.total_pontos;
@@ -371,9 +386,12 @@
                 renderIndicadores(data);
                 get("spatialPointInfo").hidden = true;
                 for (const id of ["spatialLegend", "spatialControls", "spatialLayers", "spatialExploration"]) get(id).hidden = true;
-                get("spatialZoom").hidden = false;
                 status("spatialMapStatus");
             }
+            exportContext = {url: `${endpoint()}/mapas/${series.value}`, params};
+            exportControls.note.hidden = mode.value !== "interativo";
+            exportControls.container.hidden = false;
+            exportControls.save.disabled = exportControls.zoom.disabled = false;
         } catch (error) {
             if (request === chartVersion) status("spatialMapStatus", error.message || "Mapa indisponível para esta seleção.", "error");
         } finally {
@@ -385,6 +403,15 @@
         get("spatialGrid").value = "";
         load();
     });
+    document.addEventListener("pega:mapa", ({detail}) => {
+        const interativo = detail === "mapa-interativo";
+        get("spatialHeading").textContent = interativo ? "Mapa interativo" : "Mapa científico";
+        get("spatialModeLabel").hidden = interativo;
+        mode.value = interativo ? "interativo" : modoCientifico;
+        if (!mode.value) mode.value = "pontos";
+        if (!get("spatialFigures").hidden) showMap();
+    });
+    mode.addEventListener("change", () => { if (mode.value !== "interativo") modoCientifico = mode.value; });
     source.addEventListener("change", () => load());
     get("spatialRun").addEventListener("click", () => load(true));
     tableSeries.addEventListener("change", showTable);
@@ -407,14 +434,24 @@
         ...["spatialTop", "spatialOrder", "spatialCompare", ...Object.values(layers)].map(get)]) {
         select.addEventListener("change", showMap);
     }
-    const chartObserver = new MutationObserver(showMap);
-    for (const id of ["chartsPanel", "spatialFigures"]) {
-        chartObserver.observe(get(id), {attributes: true, attributeFilter: ["hidden"]});
+    new MutationObserver(showMap).observe(get("chartsPanel"), {attributes: true, attributeFilter: ["hidden"]});
+    function imageUrl(format, dpi, download) {
+        if (!exportContext) return null;
+        const params = new URLSearchParams(exportContext.params);
+        params.set("dpi", dpi);
+        params.set("download", String(download));
+        return `${exportContext.url}.${format}?${params}`;
     }
-    get("spatialZoom").addEventListener("click", () => {
-        const params = query();
-        params.set("dpi", "300");
-        get("spatialDialog").querySelector("img").src = mapUrl("png", params);
+
+    const exportControls = imageExportControls("spatial", () => {
+        const url = imageUrl("png", "300", false);
+        if (!url) return;
+        get("spatialDialog").querySelector("img").src = url;
         get("spatialDialog").showModal();
+    }, (format, dpi) => {
+        const url = imageUrl(format, dpi, true);
+        if (url) requestImageDownload(url);
     });
+    exportControls.note.textContent = "Exportação do mapa científico por fonte com o poluente e o território selecionados.";
+    exportControls.dpi.addEventListener("change", mapLinks);
 })();

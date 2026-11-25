@@ -23,17 +23,11 @@
             boundary: number.format(s.balanco_g.borda_grade),
             invalid: number.format(s.balanco_g.coordenada_invalida)})), "modelingBalance");
         get("modelingTables").hidden = false;
-        get("modelingDownloads").hidden = false;
-        renderDownloads("modelingDownloads", endpoint(), [
-            ["emissoes-grade.nc", "Baixar inventário em grade (NetCDF)"],
-            ["metadados-modelagem.json", "Baixar balanço e metadados (JSON)"]
-        ]);
     }
 
     async function load(form) {
         const current = ++revision;
         get("modelingTables").hidden = true;
-        get("modelingDownloads").hidden = true;
         status("modelingStatus");
         if (!activeResult) return;
         if (form) status("modelingStatus", "Validando domínio e gerando NetCDF…");
