@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.pyc
+.env
+.vscode
+outputs/
+logs/
+storage/
+tests/
+requirements-dev.txt
+exemplos/
+data/geospatial/BR_UF_2025.*
